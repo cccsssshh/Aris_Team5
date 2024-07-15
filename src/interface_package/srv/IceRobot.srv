@@ -1,0 +1,8 @@
+string menu
+int16 topping
+int16 quantity
+bool shaking
+bool picture
+bool tracking
+---
+bool success

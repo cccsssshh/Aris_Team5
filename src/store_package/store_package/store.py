@@ -15,9 +15,9 @@ from interface_package.msg import StockInfo, StocksArray, OrderInfo
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales
 
 #학원
-# uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
+uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
 #집
-uiPath = "/home/sungho/amr_ws/git_ws/Aris_Team5/src/store_package/ui"
+# uiPath = "/home/sungho/amr_ws/git_ws/Aris_Team5/src/store_package/ui"
 
 loginUi = glob.glob(os.path.join(uiPath, "login.ui"))[0]
 mainUi = glob.glob(os.path.join(uiPath, "store.ui"))[0]
