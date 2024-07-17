@@ -90,7 +90,7 @@ class RobotMain(object):
         self.this_action = '?' # 현재 동작
         self.actions = ['banana', 'choco', 'strawberry'] # 가능한 동작 리스트
         self.seq_length = 30 # 시퀀스 길이
-        self.model = load_model('gesture-recognition/models/model2_1.0.keras') # 동작 인식 모델
+        self.model = load_model('src/robot_package/recog_model/model2_1.0.keras') # 동작 인식 모델
         self.seq = [] # 관절 데이터 시퀀스
         self.action_seq = [] # 동작 시퀀스
 
@@ -103,7 +103,7 @@ class RobotMain(object):
         )
         self.cap = cv2.VideoCapture(0) # 웹캠에서 비디오 캡처 시작
         pygame.mixer.init()
-
+        self.cleanup_timer_exit = None
     # =============================== init, error state ========================================= #
     def _robot_init(self):
         self._arm.clean_warn()
@@ -1667,6 +1667,16 @@ class RobotMain(object):
             time.sleep(0.5)
             print(f'joint current : {arm.currents}')
             time.sleep(10)
+
+    # =============== joint_infomation_ros =============== #
+    def joint_state_ros(self):
+        joint_temperatures = self.arm.temperatures  # arm 객체의 temperatures 속성 사용
+        print(f'joint temperature : {joint_temperatures}')
+        time.sleep(0.5)
+        joint_currents = self.arm.currents  # arm 객체의 currents 속성 사용
+        print(f'joint current : {joint_currents}')
+        return joint_currents, joint_temperatures
+
 
     # ============================== tunning code ============================== #
     def motion_grab_capsule_a(self):
@@ -4145,6 +4155,7 @@ class RobotMain(object):
         last_time = time.time()
         initial_hand_position = None
         tracking_margin = 100
+        self.start_cleanup_timer_exit()
         with self.mp_hands.Hands(max_num_hands=1) as hands:
             while self.cap.isOpened():
                 ret, frame = self.cap.read()
@@ -4184,8 +4195,9 @@ class RobotMain(object):
                 if current_time - self.last_processed_time > self.process_interval:
                     self.process_latest_coordinates()
                     self.last_processed_time = current_time
-        self.cap.release()
-        cv2.destroyAllWindows()
+        # self.cap.release()
+        # cv2.destroyAllWindows()
+        self.cleanup_and_exit()
         
     def process_latest_coordinates(self):
         if self.coordinates:
@@ -4227,13 +4239,24 @@ class RobotMain(object):
         self.start_cleanup_timer()  # 타이머를 다시 시작
         print("cleanup_lists")
 
+
+    def start_cleanup_timer_exit(self):
+        self.cleanup_timer_exit = threading.Timer(20.0, self.cleanup_and_exit)
+        self.cleanup_timer_exit.start()
+
+    def cleanup_and_exit(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+
+
 if __name__ == '__main__':
     RobotMain.pprint('xArm-Python-SDK Version:{}'.format(version.__version__))
     arm = XArmAPI('192.168.1.184', baud_checkset=False)
     robot_main = RobotMain(arm)
     print("start!!!!!!!!!!!!!!!!!!")
-    robot_main.tracking_home()
-    robot_main.run_robot_arm_tracking()
+    # robot_main.tracking_home()
+    # robot_main.run_robot_arm_tracking()
     # robot_main.start_robo()
     print("finish!!!!!!!!!!!!!!!!!")
     # robot_main.motion_home()

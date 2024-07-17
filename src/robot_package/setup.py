@@ -22,6 +22,8 @@ setup(
         'console_scripts': [
             'KioskToRobot = robot_package.KioskToRobot:main',
             'RobotToKiosk = robot_package.RobotToKiosk:main',
+            'RobotToAdminiPub = robot_package.RobotToAdminiPub:main',
+            'RobotToAdminiSub = robot_package.RobotToAdminiSub:main',
         ],
     },
 )

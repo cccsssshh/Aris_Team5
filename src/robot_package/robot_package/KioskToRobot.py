@@ -20,7 +20,7 @@ def main(args=None):
     rclpy.init(args=args)
     node = KioskToRobot()
     
-    node.send_request("banana", 1)  # 예시: 바나나 메뉴 1개 요청
+    # node.send_request("banana", 1)  # 예시: 바나나 메뉴 1개 요청
     
     while rclpy.ok():
         rclpy.spin_once(node)

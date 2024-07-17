@@ -1,0 +1,12 @@
+float32 j1
+float32 j2
+float32 j3
+float32 j4
+float32 j5
+float32 j6
+int32 temperature1
+int32 temperature2
+int32 temperature3
+int32 temperature4
+int32 temperature5
+int32 temperature6
