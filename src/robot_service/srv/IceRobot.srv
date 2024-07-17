@@ -1,0 +1,10 @@
+# Request
+string menu
+string topping
+int16 quantity
+bool shaking
+bool picture
+bool tracking
+---
+# Response
+bool success
