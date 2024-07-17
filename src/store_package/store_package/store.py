@@ -35,6 +35,7 @@ class StoreNode(Node, QObject):
     stocks = pyqtSignal(object)
     dailySales = pyqtSignal(object)
     menuDailySales = pyqtSignal(object)
+    jointTemperature = pyqtSignal(object)
 
     def __init__(self):
         super().__init__("store_node")
@@ -55,6 +56,9 @@ class StoreNode(Node, QObject):
         self.dailySalesClient = self.create_client(DailySales, "dailySales")
         self.menuDailySalesClient = self.create_client(MenuDailySales, "menuDailySales")
 
+    # def initSub(self):
+    #     self.jointTempSub = self.create_subscription(JointTemperature, "jointTemperature", callback)
+
     def waitService(self):
         while not self.dailyTotalSalesClient.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Daily total sales service not available, waiting again...')
@@ -68,6 +72,7 @@ class StoreNode(Node, QObject):
             self.get_logger().info('Daily sales service not available, waiting again...')
         while not self.menuDailySalesClient.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Menu daily sales service not available, waiting again...')
+
 
     def requestDailyTotalSales(self, year, month):
         request = DailyTotalSales.Request()
@@ -183,6 +188,11 @@ class StoreNode(Node, QObject):
             self.menuDailySales.emit(response.items)
         except Exception as e:
             self.get_logger().error(f"Service call failed: {e}")
+    
+    def jointTemperatureCallback(self):
+        #메세지 받으면 emit하기
+        pass
+
 
 class Calendar(QCalendarWidget):
     dateClicked = pyqtSignal(QDate)
@@ -379,6 +389,7 @@ class MainPage(QMainWindow, mainClass):
         self.dailySalesWindow.show()
 
     def showRobotManagePage(self):
+        self.robotmanageWindow = RobotManagePage(self.storeNode)
         self.robotManageWindow.show()
 
 class DailySalesPage(QDialog, dailySalesClass):
@@ -533,12 +544,16 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.menuSalesGraph.setPixmap(pixmap)
 
 class RobotManagePage(QDialog, robotClass):
-    def __init__(self, sock):
+    def __init__(self, storeNode):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Robot Manage")
+        self.storeNode = storeNode
 
-        self.sock = sock
+    @pySlot(object)
+    def updateJointTemperature(self, data):
+        pass
+
 
 def main(args=None):
     app = QApplication(sys.argv)
