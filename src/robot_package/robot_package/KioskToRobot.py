@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from robot_service.srv import IceRobot
+from interface_package.srv import IceRobot
 
 # ================ client ================ #
 class KioskToRobot(Node):

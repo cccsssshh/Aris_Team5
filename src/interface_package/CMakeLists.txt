@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StockInfo.msg"
   "msg/StocksArray.msg"
   "msg/OrderInfo.msg"
+  "msg/RobotStatusInfo.msg"
   "msg/Item.msg"
   "srv/Stocks.srv"
   "srv/ModifyStocks.srv"

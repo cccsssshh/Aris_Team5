@@ -11,7 +11,8 @@ import threading
 
 import rclpy as rp
 from rclpy.node import Node
-from interface_package.msg import StockInfo, StocksArray, OrderInfo
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from interface_package.msg import StockInfo, StocksArray, OrderInfo, RobotStatusInfo
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales
 
 #학원
@@ -45,6 +46,13 @@ class StoreNode(Node, QObject):
     def initNode(self):
         self.get_logger().info("Store node started")
         # time.sleep(0.5)  # Wait for 2 seconds to ensure all services are up
+        self.qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10
+        )
+
+        
         self.initClients()
         self. waitService()
 
@@ -56,8 +64,9 @@ class StoreNode(Node, QObject):
         self.dailySalesClient = self.create_client(DailySales, "dailySales")
         self.menuDailySalesClient = self.create_client(MenuDailySales, "menuDailySales")
 
-    # def initSub(self):
-    #     self.jointTempSub = self.create_subscription(JointTemperature, "jointTemperature", callback)
+    def initSub(self):
+        self.jointTempSub = self.create_subscription(RobotStatusInfo, 'RobotStatusInfo', self.robotStatusInfocallback, self.qos_profile)
+
 
     def waitService(self):
         while not self.dailyTotalSalesClient.wait_for_service(timeout_sec=1.0):
@@ -189,8 +198,14 @@ class StoreNode(Node, QObject):
         except Exception as e:
             self.get_logger().error(f"Service call failed: {e}")
     
-    def jointTemperatureCallback(self):
+    def robotStatusInfocallback(self, msg):
         #메세지 받으면 emit하기
+        joints = (f'J1: {msg.j1:.2f}, J2: {msg.j2:.2f}, J3: {msg.j3:.2f}, '
+                  f'J4: {msg.j4:.2f}, J5: {msg.j5:.2f}, J6: {msg.j6:.2f}')
+        temperatures = (f'T1: {msg.temperature1}, T2: {msg.temperature2}, '
+                        f'T3: {msg.temperature3}, T4: {msg.temperature4}, '
+                        f'T5: {msg.temperature5}, T6: {msg.temperature6}')
+        self.get_logger().info(f'\n Joints: {joints}\n Temperatures: {temperatures}')
         pass
 
 
@@ -558,8 +573,6 @@ class RobotManagePage(QDialog, robotClass):
 def main(args=None):
     app = QApplication(sys.argv)
     
-
-
     loginWindow = LoginPage()
     loginWindow.show()
 
