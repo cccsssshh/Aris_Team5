@@ -26,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DailyTotalSales.srv"
   "srv/MonthTotalSales.srv"
   "srv/MenuDailySales.srv"
+  "srv/HourlySales.srv"
   "srv/IceRobot.srv"
   "srv/OrderRecord.srv"
   "srv/RestQuantity.srv"

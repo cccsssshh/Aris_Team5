@@ -3,8 +3,8 @@ import os
 import glob
 from PyQt5.QtWidgets import *
 from PyQt5 import uic
-from PyQt5.QtCore import QDateTime, QDate, Qt, QRect, QObject, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QColor, QFont, QPainter, QPixmap, QImage, QPen
+from PyQt5.QtCore import QDateTime, QDate, Qt, QRect, QObject, pyqtSignal, pyqtSlot, QPoint
+from PyQt5.QtGui import QColor, QFont, QPainter, QPixmap, QImage, QPen, QPolygon
 import netifaces
 import threading
 
@@ -13,7 +13,7 @@ import rclpy as rp
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, RobotStatusInfo
-from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales
+from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
 
 #학원
 uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
@@ -36,7 +36,8 @@ class StoreNode(Node, QObject):
     stocks = pyqtSignal(object)
     dailySales = pyqtSignal(object)
     menuDailySales = pyqtSignal(object)
-    jointTemperature = pyqtSignal(object)
+    hourlySales = pyqtSignal(object)
+    robotStatus = pyqtSignal(list, list)
 
     def __init__(self):
         super().__init__("store_node")
@@ -63,6 +64,7 @@ class StoreNode(Node, QObject):
         self.modifyStocksClient = self.create_client(ModifyStocks, 'modifyStocks')
         self.dailySalesClient = self.create_client(DailySales, "dailySales")
         self.menuDailySalesClient = self.create_client(MenuDailySales, "menuDailySales")
+        self.hourlySalesClient = self.create_client(HourlySales, 'hourlySales')
 
     def initSub(self):
         self.jointTempSub = self.create_subscription(RobotStatusInfo, 'RobotStatusInfo', self.robotStatusInfocallback, self.qos_profile)
@@ -81,7 +83,8 @@ class StoreNode(Node, QObject):
             self.get_logger().info('Daily sales service not available, waiting again...')
         while not self.menuDailySalesClient.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Menu daily sales service not available, waiting again...')
-
+        while not self.hourlySalesClient.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Hourly sales service not available, waiting again...')
 
     def requestDailyTotalSales(self, year, month):
         request = DailyTotalSales.Request()
@@ -188,25 +191,41 @@ class StoreNode(Node, QObject):
         self.get_logger().info(f"Request to MenuDailySales service - year: {year}, month: {month}, day: {day}")
 
         future = self.menuDailySalesClient.call_async(request)
-        future.add_done_callback(self.requestMenuDailySalesCallback)
+        future.add_done_callback(self.menuDailySalesCallback)
 
-    def requestMenuDailySalesCallback(self, future):
+    def menuDailySalesCallback(self, future):
         try:
             response = future.result()
             self.get_logger().info(f"Received response from MenuDailySales service")
             self.menuDailySales.emit(response.items)
         except Exception as e:
             self.get_logger().error(f"Service call failed: {e}")
+
+    def requestHourlySales(self, year, month, day):
+        request = HourlySales.Request()
+        request.year = year
+        request.month = month
+        request.day = day
+
+        self.get_logger().info(f"Request to HourlySales service - year: {year}, month: {month}, day: {day}")
+
+        future = self.hourlySalesClient.call_async(request)
+        future.add_done_callback(self.hourlySalesCallback)
+
+    def hourlySalesCallback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(f"Received response from hourlySales service")
+            self.hourlySales.emit(response.items)
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
     
     def robotStatusInfocallback(self, msg):
-        #메세지 받으면 emit하기
-        joints = (f'J1: {msg.j1:.2f}, J2: {msg.j2:.2f}, J3: {msg.j3:.2f}, '
-                  f'J4: {msg.j4:.2f}, J5: {msg.j5:.2f}, J6: {msg.j6:.2f}')
-        temperatures = (f'T1: {msg.temperature1}, T2: {msg.temperature2}, '
-                        f'T3: {msg.temperature3}, T4: {msg.temperature4}, '
-                        f'T5: {msg.temperature5}, T6: {msg.temperature6}')
+        joints = [f"{msg.j1:.2f}", f"{msg.j2:.2f}", f"{msg.j3:.2f}", f"{msg.j4:.2f}", f"{msg.j5:.2f}", f"{msg.j6:.2f}"]
+        temperatures = [f"{msg.t1:.2f}", f"{msg.t2:.2f}", f"{msg.t3:.2f}", f"{msg.t4:.2f}", f"{msg.t5:.2f}", f"{msg.t6:.2f}"]
+        self.robotStatus.emit(joints, temperatures)
         self.get_logger().info(f'\n Joints: {joints}\n Temperatures: {temperatures}')
-        pass
+
 
 
 class Calendar(QCalendarWidget):
@@ -422,7 +441,7 @@ class DailySalesPage(QDialog, dailySalesClass):
     def initWindow(self):
         self.dailySalesRBtn.toggled.connect(self.showDailySales) # 일별 판매 기록 버튼 연결
         self.menuSalesRBtn.toggled.connect(self.showMenuSales) # 메뉴별 판매 기록 버튼 연결
-        self.timeSalesRBtn.toggled.connect(self.showTimeSales)
+        self.hourlySalesRBtn.toggled.connect(self.showHourlySales)
         self.dailySalesRBtn.setChecked(True) # 일별 판매 기록 버튼 활성화
         self.dailySalesTable.verticalHeader().setVisible(False) #일별 판매 기록 테이블의 왼쪽의 번호 비활성화
         self.handelqtSignal()
@@ -432,6 +451,7 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.updateSelectedDateLabel(self.date)
         self.storeNode.requestDailySales(self.year, self.month, self.day)
         self.storeNode.requestMenuDailySales(self.year, self.month, self.day)
+        self.storeNode.requestHourlySales(self.year, self.month, self.day)
 
     def updateSelectedDateLabel(self, date):
         self.dateLabel.setText(date.toString('yyyy년 MM월 dd일'))
@@ -439,6 +459,7 @@ class DailySalesPage(QDialog, dailySalesClass):
     def handelqtSignal(self):
         self.storeNode.dailySales.connect(self.setDailySalesData)
         self.storeNode.menuDailySales.connect(self.setMenuSalesData)
+        self.storeNode.hourlySales.connect(self.setHourlySalesData)
 
     @pyqtSlot(object)
     def setDailySalesData(self, data):
@@ -451,6 +472,12 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.menuDailySales = data
         if self.menuSalesRBtn.isChecked():
             self.drawBarGraph(data)
+
+    @pyqtSlot(object)
+    def setHourlySalesData(self, data):
+        self.hourlySales = data
+        if self.hourlySalesRBtn.isChecked():
+            self.drawLineGraph(data)
 
     def updateTable(self, data):
         self.dailySalesTable.setRowCount(len(data))
@@ -490,10 +517,11 @@ class DailySalesPage(QDialog, dailySalesClass):
             self.stackedWidget.setCurrentIndex(1)
             self.drawBarGraph(self.menuDailySales)
 
-    def showTimeSales(self):
-        if self.timeSalesRBtn.isChecked():
+    def showHourlySales(self):
+        if self.hourlySalesRBtn.isChecked():
             self.stackedWidget.setCurrentIndex(2)
-    
+            self.drawLineGraph(self.hourlySales)
+
     def drawBarGraph(self, data):
         sales_dict = {item.name: item.quantity for item in data}
 
@@ -548,9 +576,26 @@ class DailySalesPage(QDialog, dailySalesClass):
         painter.drawLine(margin, height - margin, width - margin, height - margin)  # X 축
         painter.drawLine(margin, margin, margin, height - margin)  # Y 축
 
-        # 제목 그리기
+        # Y축에 표시선과 레이블 추가
+        num_y_ticks = 5
+        y_tick_distance = graph_height / num_y_ticks
+        for i in range(num_y_ticks + 1):
+            y = height - margin - int(i * y_tick_distance)
+            sales_value = int(max_sales * (i / num_y_ticks))
+            painter.drawLine(margin - 5, y, margin, y)
+            painter.drawText(margin - 40, y + 5, f"{sales_value}")
+
+        # X축 제목 추가
+        painter.setFont(QFont('Arial', 12))
+        painter.drawText(width // 2, height - margin + 40, '메뉴명')
+
+        # Y축 제목 추가
+        painter.setFont(QFont('Arial', 12))
+        painter.drawText(margin - 40, margin - 10, '판매량 (개)')
+
+        # 그래프 제목 그리기
         painter.setFont(QFont('Arial', 14, QFont.Bold))
-        painter.drawText(int(width / 2 - 50), margin - 25, '메뉴별 일일 판매량')
+        painter.drawText(int(width / 2 - 75), margin - 25, '메뉴별 일일 판매량')
 
         painter.end()
 
@@ -558,16 +603,123 @@ class DailySalesPage(QDialog, dailySalesClass):
         pixmap = QPixmap.fromImage(image)
         self.menuSalesGraph.setPixmap(pixmap)
 
+    def drawLineGraph(self, data):
+        # name 속성을 사용하여 시간대별 판매량을 저장
+        sales_dict = {int(item.name): item.quantity for item in data}
+
+        # 모든 시간대를 포함하도록 설정
+        all_hours = list(range(24))
+        sales = [sales_dict.get(hour, 0) for hour in all_hours]
+
+        # QImage 생성
+        width, height = self.hourlySalesGraph.width(), self.hourlySalesGraph.height()
+        image = QImage(width, height, QImage.Format_ARGB32)
+        image.fill(Qt.white)
+
+        # QPainter로 QImage에 그리기
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 그래프 영역 정의
+        margin = 50
+        graph_width = width - 2 * margin
+        graph_height = height - 2 * margin
+
+        # 최대 판매량 구하기
+        max_sales = max(sales, default=1)
+
+        # 시간대별 판매량 꺾은선 그리기
+        point_distance = graph_width / (len(all_hours) - 1)
+        points = []
+        for i, sale in enumerate(sales):
+            x = margin + int(i * point_distance)
+            y = height - margin - int(sale / max_sales * graph_height)
+            points.append(QPoint(x, y))
+
+        painter.setPen(QPen(Qt.black, 2))  # 선 색상을 검은색으로 설정
+        painter.drawPolyline(QPolygon(points))
+
+        # 각 점에 원 그리기
+        painter.setBrush(Qt.red)
+        for point in points:
+            painter.drawEllipse(point, 5, 5)
+
+        # 각 점에 텍스트 추가
+        painter.setPen(Qt.black)
+        painter.setFont(QFont('Arial', 10))
+        for i, point in enumerate(points):
+            painter.drawText(point.x() - 10, point.y() - 10, str(sales[i]))
+
+        # 축 그리기
+        pen = QPen(Qt.black, 2)
+        painter.setPen(pen)
+        painter.drawLine(margin, height - margin, width - margin, height - margin)  # X 축
+        painter.drawLine(margin, margin, margin, height - margin)  # Y 축
+
+        # X축에 표시선과 레이블 추가
+        for i in range(len(all_hours)):
+            x = margin + int(i * point_distance)
+            painter.drawLine(x, height - margin, x, height - margin + 5)
+            painter.drawText(x - 10, height - margin + 20, f"{all_hours[i]}")
+
+        # Y축에 표시선과 레이블 추가
+        num_y_ticks = 5
+        y_tick_distance = graph_height / num_y_ticks
+        for i in range(num_y_ticks + 1):
+            y = height - margin - int(i * y_tick_distance)
+            sales_value = int(max_sales * (i / num_y_ticks))
+            painter.drawLine(margin - 5, y, margin, y)
+            painter.drawText(margin - 40, y + 5, f"{sales_value}")
+
+        # X축 제목 추가
+        painter.setFont(QFont('Arial', 12))
+        painter.drawText(width - margin - 30, height - margin + 40, '시간 (시)')  # 약간 왼쪽으로 이동
+
+        # Y축 제목 추가
+        painter.setFont(QFont('Arial', 12))
+        painter.drawText(margin - 40, margin - 10, '판매량 (개)')
+
+        # 그래프 제목 그리기
+        painter.setFont(QFont('Arial', 14, QFont.Bold))
+        painter.drawText(int(width / 2 - 75), margin - 25, '시간대별 아이스크림 판매량')
+
+        painter.end()
+
+        # QImage를 QPixmap으로 변환하여 QLabel에 설정
+        pixmap = QPixmap.fromImage(image)
+        self.hourlySalesGraph.setPixmap(pixmap)
+
+
 class RobotManagePage(QDialog, robotClass):
     def __init__(self, storeNode):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Robot Manage")
         self.storeNode = storeNode
+        self.handleqtSignal()
 
-    @pySlot(object)
-    def updateJointTemperature(self, data):
-        pass
+    def handleqtSignal(self):
+        self.storeNode.robotStatus.connect(self.updateRobotStatus)
+
+    @pyqtSlot(list, list)
+    def updateRobotStatus(self, joints, temperatures):
+        print("Joints:", joints)
+        print("Temperatures:", temperatures)
+
+        self.joint1Line.setText(joints[0])
+        self.joint2Line.setText(joints[1])
+        self.joint3Line.setText(joints[2])
+        self.joint4Line.setText(joints[3])
+        self.joint5Line.setText(joints[4])
+        self.joint6Line.setText(joints[5])
+
+        self.temp1Line.setText(temperatures[0])
+        self.temp2Line.setText(temperatures[1])
+        self.temp3Line.setText(temperatures[2])
+        self.temp4Line.setText(temperatures[3])
+        self.temp5Line.setText(temperatures[4])
+        self.temp6Line.setText(temperatures[6])
+
 
 
 def main(args=None):
