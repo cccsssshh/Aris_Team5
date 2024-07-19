@@ -15,7 +15,7 @@ from interface_package.msg import StockInfo, StocksArray, OrderInfo
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales
 
 #학원
-uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
+uiPath = "/home/lee/Desktop/Aris_Team5/src/store_package/ui"
 #집
 # uiPath = "/home/sungho/amr_ws/git_ws/Aris_Team5/src/store_package/ui"
 

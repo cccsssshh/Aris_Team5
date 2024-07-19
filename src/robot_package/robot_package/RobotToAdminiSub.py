@@ -10,7 +10,7 @@ class RobotToAdminiSub(Node):
         super().__init__('RobotToAdminiSub')
         self.subscription = self.create_subscription(
             RobotStatusInfo,
-            'topic',  # Publisher 노드에서 사용한 주제 이름
+            'RobotStatusInfo',  # Publisher 노드에서 사용한 주제 이름
             self.callback,
             10  # 큐의 크기
         )

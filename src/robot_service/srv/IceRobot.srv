@@ -1,10 +1,10 @@
 # Request
 string menu
 string topping
-int16 quantity
-bool shaking
-bool picture
-bool tracking
+int64 order_num
+string shaking
+string picture
+string tracking
 ---
 # Response
 bool success
