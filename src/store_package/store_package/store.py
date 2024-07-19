@@ -381,6 +381,10 @@ class MainPage(QMainWindow, mainClass):
     def showRobotManagePage(self):
         self.robotManageWindow.show()
 
+
+
+
+
 class DailySalesPage(QDialog, dailySalesClass):
     def __init__(self, storeNode, date):
         super().__init__()
