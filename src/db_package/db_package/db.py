@@ -5,7 +5,7 @@ import random
 import rclpy as rp
 from rclpy.node import Node
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, Item
-from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales
+from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
 
 class DataBaseNode(Node):
     def __init__(self):
@@ -29,7 +29,8 @@ class DataBaseNode(Node):
         self.modifyStocksService = self.create_service(ModifyStocks, "modifyStocks", self.modifyStocksCallback)
         self.dailySalesService = self.create_service(DailySales, "dailySales", self.dailySalesCallback)
         self.MenuDailySalesService = self.create_service(MenuDailySales, "menuDailySales", self.menuDailySalesCallback)
-
+        self.HourlySalesService = self.create_service(HourlySales, 'hourlySales', self.hourlySalesCallback)
+        
     def dailyTotalSalesCallback(self, request, response):
         year = request.year
         month = request.month
@@ -127,6 +128,27 @@ class DataBaseNode(Node):
         response.items = [
             Item(name=row[0], quantity=int(row[1])) for row in results
         ]
+
+        return response
+    
+    def hourlySalesCallback(self, request, response):
+        year = request.year
+        month = request.month
+        day = request.day
+        date = f"{year:04d}-{month:02d}-{day:02d}"
+
+        self.get_logger().info(f"Get request from menuHourlySalesClient - year: {year}, month: {month}, day: {day}")
+
+        results = self.dbManager.getHourlySales(date)
+
+        if results is None:
+            self.get_logger().error(f"Failed to retrieve data for date: {date}")
+            response.items = []
+        else:
+            response.items = [
+                Item(name=row[0], quantity=int(row[1])) for row in results
+            ]
+        print(response.items)
 
         return response
 
@@ -251,6 +273,17 @@ class DatabaseManager:
         GROUP BY m.name
         """
         return self._executeQuery(query, (date,), fetch=True)
+    
+    def getHourlySales(self, date):
+        query = """
+        SELECT DATE_FORMAT(order_datetime, '%H') AS hour, SUM(quantity)
+        FROM sales
+        WHERE DATE(order_datetime) = %s
+        GROUP BY hour
+        ORDER BY hour;
+        """
+        return self._executeQuery(query, (date,), fetch=True)
+
 
     def insertDummyData(self, numRecords, startDate, endDate):
         genders = ['M', 'F']
@@ -263,19 +296,22 @@ class DatabaseManager:
         records_per_day[-1] = numRecords - sum(records_per_day[:-1])  # 나머지 레코드를 마지막 날에 할당
 
         record_count = 0
-        currentDate = startDate
         data = []
 
-        for day, num_records in enumerate(records_per_day):
-            daily_order_id = 1  # 매일 order_id를 1로 시작
-            for _ in range(num_records):
+        for day in range(total_days):
+            daily_records = []
+            currentDate = startDate + timedelta(days=day)
+
+            for _ in range(records_per_day[day]):
                 if record_count >= numRecords or currentDate > endDate:
                     break
 
-                order_datetime = currentDate + timedelta(
-                    minutes=random.randint(0, 59),
-                    seconds=random.randint(0, 59)
-                )
+                # 시간대별로 랜덤하게 분포시키기 위해 시간을 랜덤하게 생성
+                random_hour = random.randint(0, 23)
+                random_minute = random.randint(0, 59)
+                random_second = random.randint(0, 59)
+                order_datetime = currentDate + timedelta(hours=random_hour, minutes=random_minute, seconds=random_second)
+                
                 menu_id = random.choice(menu_ids)
                 topping_id = random.choice(topping_ids)
                 quantity = 1
@@ -283,14 +319,36 @@ class DatabaseManager:
                 gender = random.choice(genders)
                 age = random.randint(10, 60)
 
-                data.append((daily_order_id, order_datetime, menu_id, topping_id, quantity, price, gender, age))
+                daily_records.append((order_datetime, menu_id, topping_id, quantity, price, gender, age))
 
-                daily_order_id += 1
                 record_count += 1
-            currentDate = startDate + timedelta(days=day + 1)
 
-        self.insertSalesData(data)
+            # daily_records를 시간 순으로 정렬
+            daily_records.sort(key=lambda x: x[0])
+            data.extend(daily_records)
+
+        # 전체 데이터를 시간 순으로 정렬
+        data.sort(key=lambda x: x[0])
+
+        # 정렬된 데이터에 오더 넘버 부여
+        final_data = []
+        previous_date = None
+        order_id = 1
+
+        for record in data:
+            order_datetime = record[0]
+            if previous_date is None or previous_date.date() != order_datetime.date():
+                order_id = 1  # 날짜가 변하면 order_id를 1로 초기화
+                previous_date = order_datetime
+
+            final_data.append((order_id, *record))
+            order_id += 1
+
+        self.insertSalesData(final_data)
         print(f"{record_count}개의 덤프 데이터가 삽입되었습니다.")
+
+
+
 
     def truncateTable(self):
         query = "TRUNCATE TABLE sales"
@@ -322,7 +380,7 @@ if __name__ == "__main__":
         # 덤프 데이터 넣기
         dbManager.truncateTable()
         startDate = datetime.strptime('2024-07-04 00:00:00', '%Y-%m-%d %H:%M:%S')
-        endDate = datetime.strptime('2024-07-14 23:59:59', '%Y-%m-%d %H:%M:%S')
+        endDate = datetime.strptime('2024-07-17 23:59:59', '%Y-%m-%d %H:%M:%S')
         dbManager.insertDummyData(1000, startDate, endDate)
 
     finally:

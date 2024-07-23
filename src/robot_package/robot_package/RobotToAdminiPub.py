@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from robot_service.msg import RobotStatusInfo
+from interface_package.msg import RobotStatusInfo
 from robot_package.scripts import RobotMain
 from xarm.wrapper import XArmAPI
 
