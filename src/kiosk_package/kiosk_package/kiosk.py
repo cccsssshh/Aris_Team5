@@ -1,4 +1,4 @@
-from interface_package.srv import IceRobot
+from interface_package.srv import IceRobot, OrderRecord, RestQuantity
 import sys
 import rclpy
 from rclpy.node import Node
@@ -9,28 +9,25 @@ from PyQt5 import uic
 import speech_recognition as sr
 import pyaudio
 import threading
-import uuid
 import cv2
 import numpy as np
 import mediapipe as mp
-from tensorflow.keras.models import load_model
 
-first_class = uic.loadUiType("/home/k/ros2_ws_git/Aris_Team5/src/kiosk_package/ui/kiosk.ui")[0]
+first_class = uic.loadUiType("/home/k/ros2_ws/src/py_srvcli/py_srvcli/kiosk.ui")[0]
 
 # Kiosk - Robot, DB
 menu = None  # 메뉴
 
 # Kiosk - Robot
 order_num = None  # 주문 개수
-shaking = None  # handling
+shaking = None  # hello
 tracking = None  # serving
-gesture = None  # gesture order
 half = None  # 반반 주문
-data = None
 
 # Kiosk - DB
 order_number = 0  # 주문번호
 date = None  # 주문날짜, 시간
+topping = None  # 토핑A
 price = 0  # 총 금액
 quantity = 0  # 총 수량
 gender = None  # 성별
@@ -39,40 +36,41 @@ age = None  # 연령대
 menu_price = 0  # 주문 시에 쓰는 임시 변수
 orders = []  # 주문 내역 임시 저장 변수 (리스트)
 
-class MinimalClientAsync(Node):
+class MinimalClientAsync(Node, QObject):
+    result_ready = pyqtSignal(int)
+    restquantity = pyqtSignal(object)
 
     def __init__(self):
         super().__init__('minimal_client_async')
-        self.cli= self.create_client(IceRobot, 'IceRobot')
+        QObject.__init__(self)
+        self.cli = self.create_client(OrderRecord, 'OrderRecord')
+        self.cli2 = self.create_client(RestQuantity, 'RestQuantity')
+        self.cli3 = self.create_client(IceRobot, "IceRobot")
+        self.get_logger().info('node start')
         
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
         
-        self.cap = cv2.VideoCapture(0)
-        self.this_action = '?' # 현재 동작
-        self.actions = ['banana', 'choco', 'berry'] # 가능한 동작 리스트
-        self.seq_length = 30 # 시퀀스 길이
-        self.model = load_model('/home/k/ros2_ws/src/robot_package/recog_model/model2_1.0.keras') # 동작 인식 모델
-        self.seq = [] # 관절 데이터 시퀀스
-        self.action_seq = [] # 동작 시퀀스
-        self.mp_hands = mp.solutions.hands # 미디어파이프 손 모듈
-        self.mp_drawing = mp.solutions.drawing_utils # 미디어파이프 그리기 도구
-        self.hands = self.mp_hands.Hands(
-            max_num_hands=1,
-            min_detection_confidence=0.8,
-            min_tracking_confidence=0.8
-        )
+        while not self.cli2.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
+        
+        while not self.cli3.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
 
-        self.req = IceRobot.Request()
+        self.req = OrderRecord.Request()
+        self.req2 = RestQuantity.Request()
+        self.req3 = IceRobot.Request()
 
-    def send_request(self, menu, order_num, shaking, tracking, gesture, half, data):
+    @pyqtSlot(int, str, str, str, int, int, str, str)
+    def send_request(self, order_number, date, menu, topping, price, quantity, gender, age):
+        self.req.order_number = order_number
+        self.req.date = date
         self.req.menu = menu
-        self.req.order_num = order_num
-        self.req.shaking = shaking
-        self.req.tracking = tracking
-        self.req.gesture = gesture
-        self.req.half = half  
-        self.data = data                               
+        self.req.topping = topping
+        self.req.price = price
+        self.req.quantity = quantity
+        self.req.gender = gender
+        self.req.age = age
         self.future = self.cli.call_async(self.req)
         self.future.add_done_callback(self.future_callback)
 
@@ -82,89 +80,59 @@ class MinimalClientAsync(Node):
             self.get_logger().info(f'Result: {response.success}')
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')
-
-    def send_request2(self, action):
-        req = IceRobot.Request()
-        req.data = action
-        # future2 = self.client.call_async(req2)
-        # rclpy.spin_until_future_complete(self, future2)
-        # return future2.result()
     
-    def final_hand_machine(self):
-        while self.cap.isOpened():
-            ret, img = self.cap.read()
-            if not ret:
-                break
-            img = cv2.flip(img, 1)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            result = self.hands.process(img)
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            if result.multi_hand_landmarks is not None:
-                for res in result.multi_hand_landmarks:
-                    joint = np.zeros((21, 4))
-                    for j, lm in enumerate(res.landmark):
-                        joint[j] = [lm.x, lm.y, lm.z, lm.visibility]
-                    v1 = joint[[0,1,2,3,0,5,6,7,0,9,10,11,0,13,14,15,0,17,18,19], :3]
-                    v2 = joint[[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], :3]
-                    v = v2 - v1
-                    v = v / np.linalg.norm(v, axis=1)[:, np.newaxis]
-                    angle = np.arccos(np.einsum('nt,nt->n',
-                        v[[0,1,2,4,5,6,8,9,10,12,13,14,16,17,18],:],
-                        v[[1,2,3,5,6,7,9,10,11,13,14,15,17,18,19],:]))
-                    angle = np.degrees(angle)
-                    d = np.concatenate([joint.flatten(), angle])
-                    self.seq.append(d)
-                    self.mp_drawing.draw_landmarks(img, res, self.mp_hands.HAND_CONNECTIONS)
-                    if len(self.seq) < self.seq_length:
-                        continue
-                    input_data = np.expand_dims(np.array(self.seq[-self.seq_length:], dtype=np.float32), axis=0)
-                    y_pred = self.model.predict(input_data).squeeze()
-                    i_pred = int(np.argmax(y_pred))
-                    conf = y_pred[i_pred]
-                    if conf < 0.93:
-                        continue
-                    self.action = self.actions[i_pred]
-                    self.action_seq.append(self.action)
-                    if len(self.action_seq) < 10:
-                        continue
-                    if self.action_seq[-1] == self.action_seq[-2] == self.action_seq[-3] == self.action_seq[-4] == self.action_seq[-5] == self.action_seq[-6] == self.action_seq[-7] == self.action_seq[-8] == self.action_seq[-9] == self.action_seq[-10]:
-                        self.this_action = self.action
-                    cv2.putText(img, f'{self.this_action.upper()}', org=(int(res.landmark[0].x * img.shape[1]), int(res.landmark[0].y * img.shape[0] + 20)), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(0, 0, 255), thickness=2)
-            if self.this_action != '?':
-                self.send_request2(self.this_action)
-                # if response.success:
-                #     self.speak(f"{self.this_action} 아이스크림 주문 받았습니다.")
-                #     # Add additional logic for audio and robot control if necessary
-                self.this_action = '?'
-                self.action_seq.clear()
-                self.seq.clear()
-            cv2.imshow('img', img)
-            if cv2.waitKey(1) == ord('q'):
-                break
+    def send_request2(self):
+        self.get_logger().info("connected")
+        self.future2 = self.cli2.call_async(self.req2)
+        self.future2.add_done_callback(self.future2_callback)
+    
+    def future2_callback(self, future2):
+        try:
+            response = future2.result()
+            self.get_logger().info(f'Result: {response.strawberry}, {response.chocolate}, {response.banana}, {response.affogato}')
             
-        self.cap.release()
-        cv2.destroyAllWindows()
-
-# PyQt5와 ROS 2 통합을 위한 워커 객체를 정의합니다
-class ROS2ClientWorker(QObject):
-    # 결과를 전달하기 위한 시그널을 정의합니다
-    result_ready = pyqtSignal(int)
-
-    def __init__(self):
-        super().__init__()
-        self.node = None
-        self.client = None
-        self.thread = threading.Thread(target=self.init_ros2)
-        self.thread.start()
-    def init_ros2(self):
-        rclpy.init(args=None)
-        self.node = MinimalClientAsync()
-        rclpy.spin(self.node)
+            signals = []
+            max_value = max(response.strawberry, response.chocolate, response.banana, response.affogato)
+            min_value = min(response.strawberry, response.chocolate, response.banana, response.affogato)
+            
+            if max_value == response.strawberry and min_value <= 3:
+                signals.append('strawberry_max')
+            if max_value == response.chocolate and min_value <= 3:
+                signals.append('chocolate_max')
+            if max_value == response.banana and min_value <= 3:
+                signals.append('banana_max')
+            if max_value == response.affogato and min_value <= 3:
+                signals.append('affogato_max')
+            if response.strawberry == 0:
+                signals.append('strawberry_zero')
+            if response.chocolate == 0:
+                signals.append('chocolate_zero')
+            if response.banana == 0:
+                signals.append('banana_zero')
+            if response.affogato == 0:
+                signals.append('affogato_zero')
+            
+            if signals:
+                self.restquantity.emit(signals)
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
     
-    @pyqtSlot(str, int, str, str, str, str)
-    def send_request(self, menu, order_num, shaking, tracking, gesture, half, data):
-        if self.node is not None:
-            self.node.send_request(menu, order_num, shaking, tracking, gesture, half, data)
+    @pyqtSlot(str, int, str, str, str)
+    def send_request3(self, menu, order_num, tracking, shaking, half):
+        self.req3.menu = menu
+        self.req3.order_num = order_num
+        self.req3.tracking = tracking
+        self.req3.shaking = shaking
+        self.req3.half = half
+        self.future3 = self.cli3.call_async(self.req3)
+        self.future3.add_done_callback(self.future3_callback)
+
+    def future3_callback(self, future3):
+        try:
+            response = future3.result()
+            self.get_logger().info(f'Result: {response.success}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
 
 class FirstClass(QMainWindow,first_class):
     """오픈화면 & 메인화면 창"""
@@ -184,7 +152,10 @@ class FirstClass(QMainWindow,first_class):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Main Page")
-        self.ros2_client_worker = ROS2ClientWorker()
+
+        self.init_ros2()
+
+        self.ros2_client_worker.get_logger().info('ros2 client worker start')
 
         # 오픈화면 #######################################################################################################
         self.stackedWidget.setCurrentIndex(0)  # 시작할때 화면은 오픈 페이지로 설정
@@ -200,13 +171,24 @@ class FirstClass(QMainWindow,first_class):
         self.choco_label.setPixmap(QPixmap('/home/k/Documents/QT/choco.webp').scaled(QSize(377, 198)))
         self.banana_label.setPixmap(QPixmap('/home/k/Documents/QT/banana.webp').scaled(QSize(377, 198)))
         self.affogato_label.setPixmap(QPixmap('/home/k/Documents/QT/affogato.jpg').scaled(QSize(377, 198)))
-        self.serving_label.setPixmap(QPixmap('/home/k/Documents/QT/serving.jpg').scaled(QSize(243, 247)))
-        self.hand_label.setPixmap(QPixmap('/home/k/Documents/QT/hand.jpg').scaled(QSize(243, 247)))
-        # self.half_label.setPixmap(QPixmap('/home/k/Documents/QT/camera.jpg').scaled(QSize(243, 247)))
+        self.serving_label.setPixmap(QPixmap('/home/k/Documents/QT/serving.jpg').scaled(QSize(243, 214)))
+        self.hello_label.setPixmap(QPixmap('/home/k/Documents/QT/hand.jpg').scaled(QSize(243, 214)))
+        self.half_label.setPixmap(QPixmap('/home/k/Documents/QT/half_half.jpg').scaled(QSize(243, 214)))
 
-        self.button_pushButton.clicked.connect(lambda: self.check_current_page(1))
-        self.gesture_pushButton.clicked.connect(lambda: self.check_current_page(2))
-        self.option_pushButton.clicked.connect(lambda: self.check_current_page(3))
+        self.berry_recommend_label.hide()
+        self.berry_soldout_label.hide()
+        self.choco_recommend_label.hide()
+        self.choco_soldout_label.hide()
+        self.banana_recommend_label.hide()
+        self.banana_soldout_label.hide()
+        self.affogato_recommend_label.hide()
+        self.affogato_soldout_label.hide()
+
+        self.ros2_client_worker.restquantity.connect(self.recommend_soldout)
+
+        self.menu_pushButton.clicked.connect(lambda: self.check_current_page(1))
+        self.option_pushButton.clicked.connect(lambda: self.check_current_page(2))
+        self.webcam_pushButton.clicked.connect(lambda: self.check_current_page(3))
 
         self.berry_plus_pushButton.clicked.connect(lambda: self.Berry_Add())
         self.berry_minus_pushButton.clicked.connect(lambda: self.Berry_Subtract())
@@ -218,13 +200,10 @@ class FirstClass(QMainWindow,first_class):
         self.affogato_voice_pushButton.clicked.connect(lambda: self.Affogato_Voice_Add())
         self.affogato_minus_pushButton.clicked.connect(lambda: self.Affogato_Subtract())
 
-        self.gesture_plus_pushButton.clicked.connect(lambda: self.Gesture_Add())
-        self.gesture_minus_pushButton.clicked.connect(lambda: self.Gesture_Subtract())
-
         self.serving_plus_pushButton.clicked.connect(lambda: self.Serving_Add())
         self.serving_minus_pushButton.clicked.connect(lambda: self.Serving_Subtract())
-        self.hand_plus_pushButton.clicked.connect(lambda: self.Hand_Add())
-        self.hand_minus_pushButton.clicked.connect(lambda: self.Hand_Subtract())
+        self.hello_plus_pushButton.clicked.connect(lambda: self.Hello_Add())
+        self.hello_minus_pushButton.clicked.connect(lambda: self.Hello_Subtract())
         self.half_plus_pushButton.clicked.connect(lambda: self.Half_Add())
         self.half_minus_pushButton.clicked.connect(lambda: self.Half_Subtract())
 
@@ -238,14 +217,52 @@ class FirstClass(QMainWindow,first_class):
 
         self.pay_pushButton.clicked.connect(lambda: self.Sending_Data())
     
+    def recommend_soldout(self, data):
+        if data is not None and isinstance(data, list):
+            self.berry_recommend_label.hide()
+            self.choco_recommend_label.hide()
+            self.banana_recommend_label.hide()
+            self.affogato_recommend_label.hide()
+            self.berry_soldout_label.hide()
+            self.choco_soldout_label.hide()
+            self.banana_soldout_label.hide()
+            self.affogato_soldout_label.hide()
+        
+        if "strawberry_max" in data:
+            self.berry_recommend_label.show()
+        if "chocolate_max" in data:
+            self.choco_recommend_label.show()
+        if "banana_max" in data:
+            self.banana_recommend_label.show()
+        if "affogato_max" in data:
+            self.affogato_recommend_label.show()
+        if "strawberry_zero" in data:
+            self.berry_recommend_label.hide()
+            self.berry_soldout_label.show()
+        if "chocolate_zero" in data:
+            self.choco_recommend_label.hide()
+            self.choco_soldout_label.show()
+        if "banana_zero" in data:
+            self.banana_recommend_label.hide()
+            self.banana_soldout_label.show()
+        if "affogato_zero" in data:
+            self.affogato_recommend_label.hide()
+            self.affogato_soldout_label.show()
+    
+    def init_ros2(self):
+        rclpy.init(args=None)
+        self.ros2_client_worker = MinimalClientAsync()
+        self.thread = threading.Thread(target=rclpy.spin, args=(self.ros2_client_worker,))
+        self.thread.start()
+
+    
     def start_main_page(self, event):
         """메인 페이지로 이동하고 타이머 시작"""
         self.stackedWidget.setCurrentWidget(self.main_page)
+        self.ros2_client_worker.send_request2()  # 메뉴별 재고현황 요청
         self.start_main_timer()
     
     def start_main_timer(self):
-        global orders, menu, order_num, shaking, tracking, gesture, half, order_number, date, price, quantity, gender, age, menu_price
-
         """메인 페이지로 이동 시 타이머 시작"""
         # 타이머 설정
         self.timer = QTimer(self)
@@ -274,21 +291,105 @@ class FirstClass(QMainWindow,first_class):
     def check_current_page(self, num):
         if num == 1:
             self.category_stackedWidget.setCurrentWidget(self.menu_page)
+            # self.closeEvent()
         elif num == 2:
-            self.category_stackedWidget.setCurrentWidget(self.topping_page)
-        elif num == 3:
             self.category_stackedWidget.setCurrentWidget(self.option_page)
+            # self.closeEvent()
+        elif num == 3:
+            self.category_stackedWidget.setCurrentWidget(self.webcam_page)
+            # self.cap = cv2.VideoCapture(0)
+
+            # # 타이머 설정
+            # self.webcam_timer = QTimer()
+            # self.webcam_timer.timeout.connect(self.update_frame)
+            # self.webcam_timer.start(30)  # 30ms마다 호출
         else:
             pass
     
+    def update_frame(self):
+        global menu, order_num, tracking, shaking, half, order_number, date, price, quantity, gender, age, menu_price
+
+        ret, frame = self.cap.read()
+        if ret:
+            # OpenCV BGR 이미지 -> RGB 이미지 변환
+            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            height, width, channel = rgb_image.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+
+            # QImage를 QPixmap으로 변환하여 QLabel에 설정
+            pixmap = QPixmap.fromImage(q_image)
+            self.webcam_label.setPixmap(pixmap)
+
+            if q_image == "berry" and q_image != "choco" and q_image != "banana":
+                menu = "berry"
+                self.order_label_1.setText(menu)
+                self.order_label_1.setAlignment(Qt.AlignCenter)
+                menu_price = 2500
+                if q_image == "minus":
+                    self.order_label_1.clear()
+                    menu = None
+                    menu_price = 0
+
+            elif q_image == "choco" and q_image != "berry" and q_image != "banana":
+                menu = "choco"
+                self.order_label_1.setText(menu)
+                self.order_label_1.setAlignment(Qt.AlignCenter)
+                menu_price = 2500
+                if q_image == "minus":
+                    self.order_label_1.clear()
+                    menu = None
+                    menu_price = 0
+
+            elif q_image == "banana" and q_image != "berry" and q_image != "choco":
+                menu = "banana"
+                self.order_label_1.setText(menu)
+                self.order_label_1.setAlignment(Qt.AlignCenter)
+                menu_price = 2000
+                if q_image == "minus":
+                    self.order_label_1.clear()
+                    menu = None
+                    menu_price = 0
+
+            elif q_image == "serving":
+                tracking = "serving"
+                self.order_label_2.setText(tracking)
+                self.order_label_2.setAlignment(Qt.AlignCenter)
+                if q_image == "minus":
+                    self.order_label_2.clear()
+                    tracking = None
+            
+            elif q_image == "hello":
+                shaking = "hello"
+                self.order_label_3.setText(shaking)
+                self.order_label_3.setAlignment(Qt.AlignCenter)
+                if q_image == "minus":
+                    self.order_label_3.clear()
+                    shaking = None
+
+            elif q_image == "half":
+                half = "half"
+                self.order_label_4.setText(half)
+                self.order_label_4.setAlignment(Qt.AlignCenter)
+                if q_image == "minus":
+                    self.order_label_4.clear()
+                    half = None
+            
+            else:
+                pass
+    
+    def closeEvent(self, event):
+        self.cap.release()  # 웹캠 자원 해제
+        event.accept()
+
     def Berry_Add(self):
-        global menu, menu_price, gesture
+        global menu, menu_price
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
         self.order_label_1.setFont(font)
 
-        if self.berry_plus_pushButton.isEnabled() and menu != "choco" and menu != "banana" and menu != "affogato" and gesture != "gesture":
+        if self.berry_plus_pushButton.isEnabled() and menu != "choco" and menu != "banana" and menu != "affogato":
             menu = "berry"
             self.order_label_1.setText(menu)
             self.order_label_1.setAlignment(Qt.AlignCenter)
@@ -303,13 +404,13 @@ class FirstClass(QMainWindow,first_class):
             menu_price = 0
     
     def Choco_Add(self):
-        global menu, menu_price, gesture
+        global menu, menu_price
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
         self.order_label_1.setFont(font)
 
-        if self.berry_plus_pushButton.isEnabled() and menu != "berry" and menu != "banana" and menu != "affogato" and gesture != "gesture":
+        if self.berry_plus_pushButton.isEnabled() and menu != "berry" and menu != "banana" and menu != "affogato":
             menu = "choco"
             self.order_label_1.setText(menu)
             self.order_label_1.setAlignment(Qt.AlignCenter)
@@ -324,7 +425,7 @@ class FirstClass(QMainWindow,first_class):
             menu_price = 0
 
     def Banana_Add(self):
-        global menu, menu_price, gesture
+        global menu, menu_price
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
@@ -345,7 +446,7 @@ class FirstClass(QMainWindow,first_class):
             menu_price = 0
 
     def Affogato_Add(self):
-        global menu, menu_price, gesture
+        global menu, menu_price
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
@@ -358,7 +459,7 @@ class FirstClass(QMainWindow,first_class):
             menu_price = 3000
     
     # def Affogato_Voice_Add(self):
-    #     global menu, menu_price, gesture
+    #     global menu, menu_price
     #     # 글꼴 설정
     #     font = QFont()
     #     font.setPointSize(15)  # 텍스트 크기를 20으로 설정
@@ -436,60 +537,41 @@ class FirstClass(QMainWindow,first_class):
             self.order_label_1.clear()
             menu = None
             menu_price = 0
-
-    def Gesture_Add(self):
-        global gesture
-        # 글꼴 설정
-        font = QFont()
-        font.setPointSize(15)  # 텍스트 크기를 20으로 설정
-        self.order_label_2.setFont(font)
-
-        if self.berry_plus_pushButton.isEnabled():
-            gesture = "gesture"
-            self.order_label_2.setText(gesture)
-            self.order_label_2.setAlignment(Qt.AlignCenter)
-
-    def Gesture_Subtract(self):
-        global gesture
-
-        if gesture == "gesture":
-            self.order_label_2.clear()
-            gesture = None
     
     def Serving_Add(self):
         global tracking
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
-        self.order_label_3.setFont(font)
+        self.order_label_2.setFont(font)
 
         if self.berry_plus_pushButton.isEnabled():
             tracking = "serving"
-            self.order_label_3.setText(tracking)
-            self.order_label_3.setAlignment(Qt.AlignCenter)
+            self.order_label_2.setText(tracking)
+            self.order_label_2.setAlignment(Qt.AlignCenter)
     
     def Serving_Subtract(self):
         global tracking
 
-        self.order_label_3.clear()
+        self.order_label_2.clear()
         tracking = None
     
-    def Hand_Add(self):
+    def Hello_Add(self):
         global shaking
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
-        self.order_label_4.setFont(font)
+        self.order_label_3.setFont(font)
 
         if self.berry_plus_pushButton.isEnabled():
             shaking = "hello"
-            self.order_label_4.setText(shaking)
-            self.order_label_4.setAlignment(Qt.AlignCenter)
+            self.order_label_3.setText(shaking)
+            self.order_label_3.setAlignment(Qt.AlignCenter)
     
-    def Hand_Subtract(self):
+    def Hello_Subtract(self):
         global shaking
 
-        self.order_label_4.clear()
+        self.order_label_3.clear()
         shaking = None
 
     def Half_Add(self):
@@ -497,37 +579,36 @@ class FirstClass(QMainWindow,first_class):
         # 글꼴 설정
         font = QFont()
         font.setPointSize(15)  # 텍스트 크기를 20으로 설정
-        self.order_label_5.setFont(font)
+        self.order_label_4.setFont(font)
 
         if self.berry_plus_pushButton.isEnabled():
             half = "half"
-            self.order_label_5.setText(half)
-            self.order_label_5.setAlignment(Qt.AlignCenter)
+            self.order_label_4.setText(half)
+            self.order_label_4.setAlignment(Qt.AlignCenter)
     
     def Half_Subtract(self):
         global half
 
-        self.order_label_5.clear()
+        self.order_label_4.clear()
         half = None
 
     def Order_Add(self):
-        global orders, menu, order_num, shaking, tracking, gesture, half, order_number, date, price, quantity, gender, age, menu_price
+        global orders, menu, order_num, tracking, shaking, half, order_number, date, topping, price, quantity, gender, age, menu_price
 
         if menu != None:
             orders.append({
                 'menu': menu,
                 'order_num': order_num,
-                'shaking': shaking,
                 'tracking': tracking,
-                'gesture': gesture,
+                'shaking': shaking,
                 'half': half,
-                'menu_price': menu_price
+                'menu_price': menu_price,
+                'topping': topping
             })
 
             quantity += 1
             price += menu_price
 
-            combined_text = f"{shaking} / {tracking} / {half}"
             row = self.tableWidget.rowCount()
             self.tableWidget.insertRow(row)
 
@@ -535,19 +616,24 @@ class FirstClass(QMainWindow,first_class):
             menu_item.setTextAlignment(Qt.AlignCenter)
             self.tableWidget.setItem(row, 0, menu_item)
 
-            gesture_item = QTableWidgetItem(f"{gesture}")
-            gesture_item.setTextAlignment(Qt.AlignCenter)
-            self.tableWidget.setItem(row, 1, gesture_item)
+            serving_item = QTableWidgetItem(tracking)
+            serving_item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget.setItem(row, 1, serving_item)
 
-            combined_item = QTableWidgetItem(combined_text)
-            combined_item.setTextAlignment(Qt.AlignCenter)
-            self.tableWidget.setItem(row, 2, combined_item)
+            hello_item = QTableWidgetItem(shaking)
+            hello_item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget.setItem(row, 2, hello_item)
+
+            half_item = QTableWidgetItem(half)
+            half_item.setTextAlignment(Qt.AlignCenter)
+            self.tableWidget.setItem(row, 3, half_item)
 
             self.tableWidget.setColumnWidth(0, 140)
             self.tableWidget.setColumnWidth(1, 140)
             self.tableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
             self.tableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
             self.tableWidget.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.tableWidget.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
 
             self.quantity_label.setText(str(quantity))
             self.quantity_label.setAlignment(Qt.AlignCenter)
@@ -558,16 +644,15 @@ class FirstClass(QMainWindow,first_class):
             self.order_label_2.clear()
             self.order_label_3.clear()
             self.order_label_4.clear()
-            self.order_label_5.clear()
             menu = None
             menu_price = 0
-            shaking = None
             tracking = None
-            gesture = None
+            shaking = None
             half = None
+            topping = None
     
     def Order_Subtract(self):
-        global orders, menu, order_num, shaking, tracking, gesture, half, order_number, date, price, quantity, gender, age, menu_price
+        global orders, menu, order_num, tracking, shaking, half, order_number, date, price, quantity, gender, age, menu_price
 
         if order_num is not None:
             self.tableWidget.removeRow(order_num)
@@ -595,7 +680,9 @@ class FirstClass(QMainWindow,first_class):
         order_num = self.tableWidget.currentRow()
     
     def Sending_Data(self):
-        global orders, menu, order_num, shaking, tracking, gesture, half, order_number, date, price, quantity, gender, age, menu_price
+        global orders, menu, order_num, tracking, shaking, half, order_number, date, topping, price, quantity, gender, age, menu_price
+
+        topping = "topping A"
 
         order_number += 1 
 
@@ -608,20 +695,22 @@ class FirstClass(QMainWindow,first_class):
 
             # Kiosk - Robot
             order_num = i + 1
-            shaking = str(order['shaking'])
             tracking = str(order['tracking'])
-            gesture = str(order['gesture'])
+            shaking = str(order['shaking'])
             half = str(order['half'])
 
             # Kiosk - DB
             order_number
             date = formatted_time
+            topping
             price
             quantity
             gender = "female"  # 딥러닝 적용
             age = "20~30"  # 딥러닝 적용
 
-            self.ros2_client_worker.send_request(menu, order_num, shaking, tracking, gesture, half, data)
+            self.ros2_client_worker.send_request(order_number, date, menu, topping, price, quantity, gender, age)
+            self.ros2_client_worker.send_request2()
+            self.ros2_client_worker.send_request3(menu, order_num, tracking, shaking, half)
 
         orders.clear()
         self.tableWidget.setRowCount(0)
@@ -629,19 +718,18 @@ class FirstClass(QMainWindow,first_class):
         self.order_label_2.clear()
         self.order_label_3.clear()
         self.order_label_4.clear()
-        self.order_label_5.clear()
-        self.price_label.clear()
         self.quantity_label.clear()
+        self.price_label.clear()
         menu = None
         menu_price = 0
-        shaking = None
         tracking = None
-        gesture = None
+        shaking = None
         half = None
+        topping = None
         price = 0
         quantity = 0
 
-def main(args=None):
+def main():
     app = QApplication(sys.argv)
     myWindow = FirstClass()
     myWindow.show()
