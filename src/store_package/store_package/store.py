@@ -16,7 +16,7 @@ from interface_package.msg import StockInfo, StocksArray, OrderInfo, RobotStatus
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
 
 #학원
-uiPath = "/home/lee/Desktop/Aris_Team5/src/store_package/ui"
+uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
 #집
 # uiPath = "/home/sungho/amr_ws/git_ws/Aris_Team5/src/store_package/ui"
 
@@ -52,8 +52,6 @@ class StoreNode(Node, QObject):
             durability=DurabilityPolicy.VOLATILE,
             depth=10
         )
-
-        
         self.initClients()
         self. waitService()
 
@@ -225,8 +223,6 @@ class StoreNode(Node, QObject):
         temperatures = [f"{msg.t1:.2f}", f"{msg.t2:.2f}", f"{msg.t3:.2f}", f"{msg.t4:.2f}", f"{msg.t5:.2f}", f"{msg.t6:.2f}"]
         self.robotStatus.emit(joints, temperatures)
         self.get_logger().info(f'\n Joints: {joints}\n Temperatures: {temperatures}')
-
-
 
 class Calendar(QCalendarWidget):
     dateClicked = pyqtSignal(QDate)
@@ -426,10 +422,6 @@ class MainPage(QMainWindow, mainClass):
         self.robotManageWindow = RobotManagePage(self.storeNode)
         self.robotManageWindow.show()
 
-
-
-
-
 class DailySalesPage(QDialog, dailySalesClass):
     def __init__(self, storeNode, date):
         super().__init__()
@@ -527,7 +519,14 @@ class DailySalesPage(QDialog, dailySalesClass):
             self.drawLineGraph(self.hourlySales)
 
     def drawBarGraph(self, data):
+        # 모든 메뉴 아이템을 정의
+        all_menu_items = ['딸기', '바나나', '초코', '아포가토']
+
+        # 판매량 데이터를 딕셔너리로 변환
         sales_dict = {item.name: item.quantity for item in data}
+
+        # 모든 메뉴 아이템을 포함하여 판매량을 0으로 설정
+        sales_dict = {menu: sales_dict.get(menu, 0) for menu in all_menu_items}
 
         menuItems = list(sales_dict.keys())
         sales = list(sales_dict.values())
@@ -549,6 +548,9 @@ class DailySalesPage(QDialog, dailySalesClass):
         # 최대 판매량 구하기
         max_sales = max(sales, default=1)
 
+        # Y축 최대값 설정 (9 이하일 경우 9로 설정, 그 이상일 경우 max_sales로 설정)
+        y_max = max(max_sales, 9)
+
         # 각 메뉴에 대한 색상 정의
         colors = {
             '딸기': QColor('#FF6347'),  # 토마토 레드
@@ -561,7 +563,7 @@ class DailySalesPage(QDialog, dailySalesClass):
         bar_width = graph_width / len(menuItems)
         for i, (menu, sale) in enumerate(zip(menuItems, sales)):
             x = margin + int(i * bar_width)
-            y = height - margin - int(sale / max_sales * graph_height)
+            y = height - margin - int(sale / y_max * graph_height)
             painter.setBrush(colors[menu])
             painter.drawRect(int(x), int(y), int(bar_width * 0.8), int(height - margin - y))
 
@@ -581,13 +583,24 @@ class DailySalesPage(QDialog, dailySalesClass):
         painter.drawLine(margin, margin, margin, height - margin)  # Y 축
 
         # Y축에 표시선과 레이블 추가
-        num_y_ticks = 5
-        y_tick_distance = graph_height / num_y_ticks
-        for i in range(num_y_ticks + 1):
-            y = height - margin - int(i * y_tick_distance)
-            sales_value = int(max_sales * (i / num_y_ticks))
-            painter.drawLine(margin - 5, y, margin, y)
-            painter.drawText(margin - 40, y + 5, f"{sales_value}")
+        if y_max <= 9:
+            # 9 이하일 경우 1씩 증가
+            num_y_ticks = y_max
+            y_tick_distance = graph_height / num_y_ticks
+            for i in range(num_y_ticks + 1):
+                y = height - margin - int(i * y_tick_distance)
+                sales_value = i
+                painter.drawLine(margin - 5, y, margin, y)
+                painter.drawText(margin - 40, y + 5, f"{sales_value}")
+        else:
+            # 그 이상일 경우 유동적으로 설정
+            num_y_ticks = 5
+            y_tick_distance = graph_height / num_y_ticks
+            for i in range(num_y_ticks + 1):
+                y = height - margin - int(i * y_tick_distance)
+                sales_value = int(y_max * (i / num_y_ticks))
+                painter.drawLine(margin - 5, y, margin, y)
+                painter.drawText(margin - 40, y + 5, f"{sales_value}")
 
         # X축 제목 추가
         painter.setFont(QFont('Arial', 12))
@@ -606,6 +619,9 @@ class DailySalesPage(QDialog, dailySalesClass):
         # QImage를 QPixmap으로 변환하여 QLabel에 설정
         pixmap = QPixmap.fromImage(image)
         self.menuSalesGraph.setPixmap(pixmap)
+
+
+
 
     def drawLineGraph(self, data):
         # name 속성을 사용하여 시간대별 판매량을 저장

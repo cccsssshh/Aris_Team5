@@ -5,7 +5,7 @@ import random
 import rclpy as rp
 from rclpy.node import Node
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, Item
-from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
+from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales, OrderRecord, RestQuantity
 
 class DataBaseNode(Node):
     def __init__(self):
@@ -29,7 +29,9 @@ class DataBaseNode(Node):
         self.modifyStocksService = self.create_service(ModifyStocks, "modifyStocks", self.modifyStocksCallback)
         self.dailySalesService = self.create_service(DailySales, "dailySales", self.dailySalesCallback)
         self.MenuDailySalesService = self.create_service(MenuDailySales, "menuDailySales", self.menuDailySalesCallback)
-        self.HourlySalesService = self.create_service(HourlySales, 'hourlySales', self.hourlySalesCallback)
+        self.hourlySalesService = self.create_service(HourlySales, 'hourlySales', self.hourlySalesCallback)
+        self.OrderRecordService = self.create_service(OrderRecord, 'OrderRecord', self.orderRecordCallback)
+        self.RestQuantityService = self.create_service(RestQuantity, 'RestQuantity', self.restQuantityCallback)
         
     def dailyTotalSalesCallback(self, request, response):
         year = request.year
@@ -149,6 +151,89 @@ class DataBaseNode(Node):
                 Item(name=row[0], quantity=int(row[1])) for row in results
             ]
         print(response.items)
+
+        return response
+    
+    def restQuantityCallback(self, request, response):
+        menuresults, toppingresults = self.dbManager.getRestQuantity()
+        for menu in menuresults:
+            if menu[0] == "딸기":
+                response.strawberry = menu[1]
+            elif menu[0] == "바나나":
+                response.banana = menu[1]
+            elif menu[0] == "초코":
+                response.chocolate = menu[1]
+            elif menu[0] == "아포가토":
+                response.affogato = menu[1]
+
+        for topping in toppingresults:
+            if topping[0] == "토핑A":
+                response.topping_a = topping[1]
+            elif topping[0] == "토핑B":
+                response.topping_b = topping[1]
+            elif topping[0] == "토핑C":
+                response.topping_c = topping[1]
+
+        return response
+
+    def orderRecordCallback(self, request, response):
+        self.get_logger().info(f"date : {type(request.date)}")
+        order_number = request.order_number
+        date_str = request.date  # 문자열 형식의 날짜
+        menu = request.menu
+        topping = request.topping
+        price = request.price
+        quantity = request.quantity
+        gender = request.gender
+        age = request.age
+
+        if menu == "berry":
+            menu = "딸기"
+            menu_id = 1
+        elif menu == "banana":
+            menu = "바나나"
+            menu_id = 2
+        elif menu == "choco":
+            menu = "초코"
+            menu_id = 3
+        elif menu == "affogato" or menu == "아포가토":
+            menu = "이포가토"
+            menu_id = 4
+
+        if topping == "topping A":
+            topping = "토핑A"
+            topping_id = 1
+        elif topping == "topping B":
+            topping = "토핑B"
+            topping_id = 2
+        elif topping == "topping C":
+            topping = "토핑C"
+            topping_id = 3
+
+        if gender == "male":
+            gender = "M"
+        elif gender == "female":
+            gender = "F"
+
+        # 문자열을 datetime 객체로 변환 (형식에 맞게 수정 필요)
+        try:
+            order_datetime = datetime.strptime(date_str, "%Y%m%d %H:%M")
+        except ValueError as e:
+            response.success = False
+            return response
+
+        data = [(order_number, order_datetime, menu_id, topping_id, quantity, price, gender, age)]
+
+        # 데이터 삽입
+        self.dbManager.insertSalesData(data)
+        # 메뉴 재고 업데이트
+        menuStockData = [(menu, -quantity)]
+        self.dbManager.updateMenuStock(menuStockData)
+
+        # 토핑 재고 업데이트
+        toppingStockData = [(topping, -quantity)]
+        self.dbManager.updateToppingStock(toppingStockData)
+        response.success = True
 
         return response
 
@@ -283,7 +368,15 @@ class DatabaseManager:
         ORDER BY hour;
         """
         return self._executeQuery(query, (date,), fetch=True)
+    
+    def getRestQuantity(self):
+        menuQuery = "SELECT name, stock FROM menu"
+        toppingQuery = "SELECT name, stock FROM topping"
 
+        menuResult = self._executeQuery(menuQuery, fetch=True)
+        toppingResult = self._executeQuery(toppingQuery, fetch=True)
+
+        return menuResult, toppingResult
 
     def insertDummyData(self, numRecords, startDate, endDate):
         genders = ['M', 'F']
