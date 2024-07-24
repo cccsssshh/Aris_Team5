@@ -4,4 +4,7 @@ install/
 log/
 .vscode/
 
-src/kiosk_package/models/
+# Ignore Keras model files
+src/kiosk_package/models/*.keras
+src/kiosk_package/models/*.hdf5
+
