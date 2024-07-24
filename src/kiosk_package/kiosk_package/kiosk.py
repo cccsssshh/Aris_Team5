@@ -232,19 +232,17 @@ class FirstClass(QMainWindow,first_class):
         self.pay_pushButton.clicked.connect(lambda: self.Sending_Data())
 
         self.camera = Camera()
-        
-
-    def init_camera(self):
-        self.webcam_label.setPixmap(QPixmap())
         self.camera.start()
-        self.camera.frame.connect(self.update_image)
-
+        ###################손 제스쳐###################
+        self.camera.action.connect(self.handleAction)
+        #############################################
     @pyqtSlot(np.ndarray)
     def update_image(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = frame.shape
-        bytes_per_line = ch * w
-        q_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        resized_frame = cv2.resize(frame, (760, 570))
+        h, w, ch = resized_frame.shape
+        bytes_per_line = 3 * w
+        q_image = QImage(resized_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
         self.webcam_label.setPixmap(QPixmap.fromImage(q_image))
 
 
@@ -290,6 +288,7 @@ class FirstClass(QMainWindow,first_class):
     def start_main_page(self, event):
         """메인 페이지로 이동하고 타이머 시작"""
         self.stackedWidget.setCurrentWidget(self.main_page)
+        self.camera.detectMode = 1 #나이 성별 판단 모델 동작
         self.ros2_client_worker.send_request2()  # 메뉴별 재고현황 요청
         self.start_main_timer()
     
@@ -321,30 +320,29 @@ class FirstClass(QMainWindow,first_class):
     
     def check_current_page(self, num):
         if num == 1:
-            if self.camera:
-                self.camera.stop()
+            self.camera.detectMode = 1
             self.category_stackedWidget.setCurrentWidget(self.menu_page)
         elif num == 2:
-            if self.camera:
-                self.camera.stop()
+            self.camera.detectMode = 1
             self.category_stackedWidget.setCurrentWidget(self.option_page)
         elif num == 3:
             self.category_stackedWidget.setCurrentWidget(self.webcam_page)
-            self.init_camera()
+            self.webcam_label.setPixmap(QPixmap())
+            self.camera.detectMode = 2
+            self.camera.frame.connect(self.update_image)
         else:
             pass
     
     def update_frame(self):
         global menu, order_num, tracking, shaking, half, order_number, date, price, quantity, gender, age, menu_price
-
         ret, frame = self.cap.read()
         if ret:
+        #     resized_frame = cv2.resize(frame, (760, 570))
             # OpenCV BGR 이미지 -> RGB 이미지 변환
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             height, width, channel = rgb_image.shape
             bytes_per_line = 3 * width
             q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format_RGB888)
-
             # QImage를 QPixmap으로 변환하여 QLabel에 설정
             pixmap = QPixmap.fromImage(q_image)
             self.webcam_label.setPixmap(pixmap)
@@ -735,8 +733,9 @@ class FirstClass(QMainWindow,first_class):
             topping
             price
             quantity
-            gender = "female"  # 딥러닝 적용
-            age = "20~30"  # 딥러닝 적용
+            # gender = "female"  # 딥러닝 적용
+            # age = "20~30"  # 딥러닝 적용
+            age, gender = self.camera.ageModel.getMostCommonAgeGender()
 
             self.ros2_client_worker.send_request(order_number, date, menu, topping, price, quantity, gender, age)
             self.ros2_client_worker.send_request2()
@@ -759,8 +758,13 @@ class FirstClass(QMainWindow,first_class):
         price = 0
         quantity = 0
 
+    @pyqtSlot(str)
+    def handleAction(self, action):
+        print(action)
+        
 class Camera(QObject):
     frame = pyqtSignal(np.ndarray)
+    action = pyqtSignal(str)
     
     def __init__(self, camera_index=0):
         super().__init__()
@@ -773,6 +777,8 @@ class Camera(QObject):
         self.ageModel = AgeModel()
         self.running = False
         self.thread = None
+        self.detectMode = 0 #0 : 얼굴만 인식, 1: 나이 성별 인식, 2: 제스처 인식
+        self.gestureDetected = False
 
         if torch.cuda.is_available():
             # GPU를 사용하도록 설정
@@ -794,10 +800,19 @@ class Camera(QObject):
             if not ret:
                 print("Failed to grab frame")
                 break
-            frame = self.gestureModel.analyzeGesture(frame)
-            frame = self.ageModel.analyzeAgeGender(frame)
-
-            self.frame.emit(frame)
+            if self.detectMode == 0:
+                frame, _, _ = self.ageModel.detectFace(frame)
+            elif self.detectMode == 1:
+                frame = self.ageModel.analyzeAgeGender(frame)
+            elif self.detectMode == 2:
+                frame, action = self.gestureModel.analyzeGesture(frame)
+                self.frame.emit(frame)
+                if action != '?':
+                    if self.gestureDetected == False:
+                        self.action.emit(str(action))
+                        self.gestureDetected = True
+                else:
+                        self.gestureDetected = False
 
     def stop(self):
         self.running = False
