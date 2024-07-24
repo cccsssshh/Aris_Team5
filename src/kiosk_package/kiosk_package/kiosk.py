@@ -1,7 +1,7 @@
 import sys
 import os
 from ament_index_python.packages import get_package_share_directory
-# 현재 스크립트의 디렉토리를 sys.path에 추가
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 package_share_directory = get_package_share_directory('kiosk_package')
@@ -22,6 +22,10 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from deeplearning_model import GestureModel, AgeModel
+import threading
+import torch
+from deepface import DeepFace
+
 
 first_class = uic.loadUiType(ui_file_path)[0]
 
@@ -226,20 +230,22 @@ class FirstClass(QMainWindow,first_class):
         self.tableWidget.setColumnWidth(2, 200)
 
         self.pay_pushButton.clicked.connect(lambda: self.Sending_Data())
+
+        self.camera = Camera()
         
-        self.init_camera()
 
     def init_camera(self):
-        self.camera = Camera()
-        self.camera.connect(self.update_image)
+        self.webcam_label.setPixmap(QPixmap())
+        self.camera.start()
+        self.camera.frame.connect(self.update_image)
 
     @pyqtSlot(np.ndarray)
     def update_image(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = frame.shape
         bytes_per_line = ch * w
-        # q_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        # self.label.setPixmap(QPixmap.fromImage(q_image))
+        q_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        self.webcam_label.setPixmap(QPixmap.fromImage(q_image))
 
 
     def recommend_soldout(self, data):
@@ -315,14 +321,16 @@ class FirstClass(QMainWindow,first_class):
     
     def check_current_page(self, num):
         if num == 1:
+            if self.camera:
+                self.camera.stop()
             self.category_stackedWidget.setCurrentWidget(self.menu_page)
-            # self.closeEvent()
         elif num == 2:
+            if self.camera:
+                self.camera.stop()
             self.category_stackedWidget.setCurrentWidget(self.option_page)
-            # self.closeEvent()
         elif num == 3:
             self.category_stackedWidget.setCurrentWidget(self.webcam_page)
-            self.camera.frame.connect(self.update_image)
+            self.init_camera()
         else:
             pass
     
@@ -399,8 +407,10 @@ class FirstClass(QMainWindow,first_class):
                 pass
     
     def closeEvent(self, event):
-        self.cap.release()  # 웹캠 자원 해제
-        event.accept()
+        self.camera.stop()
+        self.ros2_client_worker.destroy_node()
+        rclpy.shutdown()
+        event.accept()  # 창을 닫음
 
     def Berry_Add(self):
         global menu, menu_price
@@ -749,7 +759,7 @@ class FirstClass(QMainWindow,first_class):
         price = 0
         quantity = 0
 
-class Camera(QThread):
+class Camera(QObject):
     frame = pyqtSignal(np.ndarray)
     
     def __init__(self, camera_index=0):
@@ -762,9 +772,23 @@ class Camera(QThread):
         self.gestureModel = GestureModel()
         self.ageModel = AgeModel()
         self.running = False
+        self.thread = None
+
+        if torch.cuda.is_available():
+            # GPU를 사용하도록 설정
+            self.device = torch.device("cuda")
+            print("GPU를 사용합니다.")
+        else:
+            # CPU를 사용하도록 설정
+            self.device = torch.device("cpu")
+            print("GPU를 사용할 수 없습니다. CPU를 사용합니다.")
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
 
     def run(self):
-        self.running = True
         while self.running:
             ret, frame = self.cap.read()
             if not ret:
@@ -772,15 +796,14 @@ class Camera(QThread):
                 break
             frame = self.gestureModel.analyzeGesture(frame)
             frame = self.ageModel.analyzeAgeGender(frame)
+
             self.frame.emit(frame)
 
     def stop(self):
         self.running = False
-        self.quit()
-        self.wait()
+        if self.thread is not None:
+            self.thread.join()
         self.cap.release()
-
-
 
 def main():
     app = QApplication(sys.argv)

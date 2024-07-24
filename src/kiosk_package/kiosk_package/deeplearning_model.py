@@ -4,7 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 # 현재 스크립트의 디렉토리를 sys.path에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
 package_share_directory = get_package_share_directory('kiosk_package')
-gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.keras')
+gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
 age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
 
 import cv2
@@ -164,7 +164,6 @@ class AgeModel():
     def analyzeAgeGender(self, frame):
         try:
             analysis = DeepFace.analyze(frame, actions=['gender'], detector_backend='yunet', enforce_detection=False)
-
             if isinstance(analysis, list):
                 for face in analysis:
                     region = face['region']
@@ -214,43 +213,3 @@ class AgeModel():
 
         return mostCommonAge, mostCommonGender
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Camera Stream")
-
-        self.camera = Camera()
-        self.camera.frame_ready.connect(self.update_image)
-
-        self.label = QLabel()
-        self.label.setAlignment(Qt.AlignCenter)
-
-        layout = QVBoxLayout()
-        layout.addWidget(self.label)
-
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-    def start_camera(self):
-        self.camera.start()
-
-    def update_image(self, frame):
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = frame.shape
-        bytes_per_line = ch * w
-        q_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        self.label.setPixmap(QPixmap.fromImage(q_image))
-
-    def closeEvent(self, event):
-        # age, gender = self.camera.ageModel.getMostCommonAgeGender()
-        # print(age, gender)
-        self.camera.stop()
-        event.accept()
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    window.start_camera()
-    sys.exit(app.exec_())

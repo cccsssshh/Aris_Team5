@@ -11,9 +11,14 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/ui', ['ui/kiosk.ui']),
-        ('share/' + package_name + '/models', ['models/gesture_model_v2.keras', 'models/age_model.hdf5'])
+        ('share/' + package_name + '/models', ['models/gesture_model_v2.keras', 'models/gesture_model_v2.hdf5', 'models/age_model.hdf5'])
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'deepface==0.0.92',
+        'opencv-python==4.8.0.76',
+        'tensorflow==2.15.0',
+    ],
     zip_safe=True,
     maintainer='k',
     maintainer_email='kgt6467@gmail.com',
