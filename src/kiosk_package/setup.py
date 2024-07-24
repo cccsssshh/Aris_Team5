@@ -10,7 +10,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/ui', ['ui/kiosk.ui'])
+        ('share/' + package_name + '/ui', ['ui/kiosk.ui']),
+        ('share/' + package_name + '/models', ['models/gesture_model_v2.keras', 'models/age_model.hdf5'])
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -21,7 +22,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'kiosk = kiosk_package.kiosk:main'
+            'kiosk = kiosk_package.kiosk:main',
+            'deeplearning_model = kiosk_package.deeplearning_model:main'
+
         ],
     },
 )

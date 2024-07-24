@@ -1,3 +1,12 @@
+import sys
+import os
+from ament_index_python.packages import get_package_share_directory
+# 현재 스크립트의 디렉토리를 sys.path에 추가
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+package_share_directory = get_package_share_directory('kiosk_package')
+ui_file_path = os.path.join(package_share_directory, 'ui/kiosk.ui')
+
 from interface_package.srv import IceRobot, OrderRecord, RestQuantity
 import sys
 import rclpy
@@ -12,8 +21,9 @@ import threading
 import cv2
 import numpy as np
 import mediapipe as mp
+from deeplearning_model import GestureModel, AgeModel
 
-first_class = uic.loadUiType("/home/k/ros2_ws/src/py_srvcli/py_srvcli/kiosk.ui")[0]
+first_class = uic.loadUiType(ui_file_path)[0]
 
 # Kiosk - Robot, DB
 menu = None  # 메뉴
@@ -48,14 +58,14 @@ class MinimalClientAsync(Node, QObject):
         self.cli3 = self.create_client(IceRobot, "IceRobot")
         self.get_logger().info('node start')
         
-        while not self.cli.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service not available, waiting again...')
+        # while not self.cli.wait_for_service(timeout_sec=1.0):
+        #     self.get_logger().info('service not available, waiting again...')
         
-        while not self.cli2.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service not available, waiting again...')
+        # while not self.cli2.wait_for_service(timeout_sec=1.0):
+        #     self.get_logger().info('service not available, waiting again...')
         
-        while not self.cli3.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('service not available, waiting again...')
+        # while not self.cli3.wait_for_service(timeout_sec=1.0):
+        #     self.get_logger().info('service not available, waiting again...')
 
         self.req = OrderRecord.Request()
         self.req2 = RestQuantity.Request()
@@ -216,7 +226,22 @@ class FirstClass(QMainWindow,first_class):
         self.tableWidget.setColumnWidth(2, 200)
 
         self.pay_pushButton.clicked.connect(lambda: self.Sending_Data())
-    
+        
+        self.init_camera()
+
+    def init_camera(self):
+        self.camera = Camera()
+        self.camera.connect(self.update_image)
+
+    @pyqtSlot(np.ndarray)
+    def update_image(self, frame):
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = frame.shape
+        bytes_per_line = ch * w
+        # q_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        # self.label.setPixmap(QPixmap.fromImage(q_image))
+
+
     def recommend_soldout(self, data):
         if data is not None and isinstance(data, list):
             self.berry_recommend_label.hide()
@@ -297,12 +322,7 @@ class FirstClass(QMainWindow,first_class):
             # self.closeEvent()
         elif num == 3:
             self.category_stackedWidget.setCurrentWidget(self.webcam_page)
-            # self.cap = cv2.VideoCapture(0)
-
-            # # 타이머 설정
-            # self.webcam_timer = QTimer()
-            # self.webcam_timer.timeout.connect(self.update_frame)
-            # self.webcam_timer.start(30)  # 30ms마다 호출
+            self.camera.frame.connect(self.update_image)
         else:
             pass
     
@@ -728,6 +748,39 @@ class FirstClass(QMainWindow,first_class):
         topping = None
         price = 0
         quantity = 0
+
+class Camera(QThread):
+    frame = pyqtSignal(np.ndarray)
+    
+    def __init__(self, camera_index=0):
+        super().__init__()
+        self.camera_index = camera_index
+        self.cap = cv2.VideoCapture(self.camera_index)
+        if not self.cap.isOpened():
+            raise Exception(f"Camera with index {self.camera_index} could not be opened.")
+        
+        self.gestureModel = GestureModel()
+        self.ageModel = AgeModel()
+        self.running = False
+
+    def run(self):
+        self.running = True
+        while self.running:
+            ret, frame = self.cap.read()
+            if not ret:
+                print("Failed to grab frame")
+                break
+            frame = self.gestureModel.analyzeGesture(frame)
+            frame = self.ageModel.analyzeAgeGender(frame)
+            self.frame.emit(frame)
+
+    def stop(self):
+        self.running = False
+        self.quit()
+        self.wait()
+        self.cap.release()
+
+
 
 def main():
     app = QApplication(sys.argv)
