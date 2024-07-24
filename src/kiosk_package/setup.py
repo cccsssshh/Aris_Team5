@@ -16,7 +16,6 @@ setup(
     install_requires=[
         'setuptools',
         'deepface==0.0.92',
-        'opencv-python==4.8.0.76',
         'tensorflow==2.15.0',
     ],
     zip_safe=True,
