@@ -104,7 +104,7 @@ class GestureModel():
                 start_time = time.time()
                 y_pred = self.model.predict(input_data, verbose=0).squeeze()
                 prediction_time = time.time() - start_time
-                print(f"Prediction time: {prediction_time:.4f} seconds")  # 예측 시간 로그 출력
+                # print(f"Prediction time: {prediction_time:.4f} seconds")  # 예측 시간 로그 출력
 
                 i_pred = int(np.argmax(y_pred))
                 conf = y_pred[i_pred]
@@ -132,7 +132,7 @@ class GestureModel():
                     self.action_start_time = None
             cv2.putText(img, f'{self.this_action.upper()}', org=(int(res.landmark[0].x * img.shape[1]), int(res.landmark[0].y * img.shape[0] + 20)), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(0, 0, 255), thickness=2)
 
-        return img  # 처리된 이미지를 반환
+        return img, self.this_action  # 처리된 이미지를 반환
     
 
 class AgeModel():
@@ -148,6 +148,25 @@ class AgeModel():
         self.ageBuffer = []
         self.genderBuffer = []
 
+    def detectFace(self, frame):
+        face_image = None
+        gender_label = None
+        analysis = None
+        try:
+            analysis = DeepFace.analyze(frame, actions=['gender'], detector_backend='yunet', enforce_detection=False)
+            if isinstance(analysis, list):
+                for face in analysis:
+                    region = face['region']
+                    x, y, w, h = region['x'], region['y'], region['w'], region['h']
+                    if w > 90 and h > 120:
+                        face_image = frame[y:y+h, x:x+w]
+                        gender_label = f"Gender: {face['dominant_gender']}"
+                        break  # 첫 번째 얼굴만 반환
+        except Exception as e:
+            print(f"Error: {e}")
+
+        return face_image, gender_label, analysis
+
     def predictAge(self, faceImage):
         faceResized = cv2.resize(faceImage, (224, 224))
         faceArray = image.img_to_array(faceResized)
@@ -160,27 +179,42 @@ class AgeModel():
         ageConfidence = preds[0][ageIndex] * 100  # 나이대 확률
         
         return ageLabel, ageConfidence
-        
+    
     def analyzeAgeGender(self, frame):
         try:
             analysis = DeepFace.analyze(frame, actions=['gender'], detector_backend='yunet', enforce_detection=False)
+
             if isinstance(analysis, list):
+                # 가장 큰 얼굴을 찾기 위한 변수 초기화
+                largest_face = None
+                max_area = 0
+
                 for face in analysis:
                     region = face['region']
                     x, y, w, h = region['x'], region['y'], region['w'], region['h']
+                    area = w * h
+
+                    # 가장 큰 얼굴 선택
+                    if area > max_area:
+                        largest_face = face
+                        max_area = area
+
+                if largest_face is not None:
+                    region = largest_face['region']
+                    x, y, w, h = region['x'], region['y'], region['w'], region['h']
                     face_image = frame[y:y+h, x:x+w]
-                    
+
                     self.frameCount += 1
                     if self.frameCount % 10 == 0 or not self.evaluated:
                         # 사용자 정의 모델을 사용하여 나이 예측
                         ageLabel, ageConfidence = self.predictAge(face_image)
                         if ageConfidence >= 80:
                             self.lastAgeLabel = ageLabel
-                            self.lastGenderLabel = f"Gender: {face['dominant_gender']}"
+                            self.lastGenderLabel = f"Gender: {largest_face['dominant_gender']}"
                             self.evaluated = True
                         else:
                             self.evaluated = False
-                    
+
                     # 평가가 완료된 후에만 결과 표시
                     if self.evaluated:
                         ageLabel = f"Age: {self.lastAgeLabel}"
@@ -188,15 +222,15 @@ class AgeModel():
                         self.ageBuffer.append(ageLabel)
                         self.genderBuffer.append(genderLabel)
                         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-                        cv2.putText(frame,ageLabel, (x, y-30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                        cv2.putText(frame, ageLabel, (x, y-30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
                         cv2.putText(frame, genderLabel, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
                     else:
                         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
         except Exception as e:
             print(f"Error: {e}")
-        
+
         return frame
-    
+        
     #결제 버튼 눌렀을 때 동작 
     def getMostCommonAgeGender(self):
         if not self.ageBuffer or not self.genderBuffer:
