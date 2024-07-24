@@ -3,3 +3,5 @@ build/
 install/
 log/
 .vscode/
+
+src/kiosk_package/models/
