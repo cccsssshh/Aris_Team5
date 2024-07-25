@@ -1,12 +1,6 @@
 import sys
 import os
 from ament_index_python.packages import get_package_share_directory
-# 현재 스크립트의 디렉토리를 sys.path에 추가
-current_dir = os.path.dirname(os.path.abspath(__file__))
-package_share_directory = get_package_share_directory('kiosk_package')
-gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
-age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
-
 import cv2
 import numpy as np
 from deepface import DeepFace
@@ -21,9 +15,12 @@ from collections import Counter
 import time
 from collections import deque
 
-os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'  # 이 경로를 실제 Qt 플러그인 경로로 설정
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'
 
-
+current_dir = os.path.dirname(os.path.abspath(__file__))
+package_share_directory = get_package_share_directory('kiosk_package')
+gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
+age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
 
 class GestureModel():
     def __init__(self):

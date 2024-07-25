@@ -1,13 +1,6 @@
 import sys
 import os
 from ament_index_python.packages import get_package_share_directory
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
-package_share_directory = get_package_share_directory('kiosk_package')
-ui_file_path = os.path.join(package_share_directory, 'ui/kiosk.ui')
-image_folder_path = os.path.join(package_share_directory, 'ui/image/')
-
 from interface_package.srv import IceRobot, OrderRecord, RestQuantity
 import sys
 import rclpy
@@ -27,6 +20,11 @@ import threading
 import torch
 from deepface import DeepFace
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+package_share_directory = get_package_share_directory('kiosk_package')
+ui_file_path = os.path.join(package_share_directory, 'ui/kiosk.ui')
+image_folder_path = os.path.join(package_share_directory, 'ui/image/')
 
 first_class = uic.loadUiType(ui_file_path)[0]
 
