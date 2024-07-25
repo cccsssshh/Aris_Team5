@@ -1,19 +1,16 @@
 import sys
 import os
-from ament_index_python.packages import get_package_share_directory
 import cv2
+import time
 import numpy as np
+from collections import Counter
+from collections import deque
+import mediapipe as mp
 from deepface import DeepFace
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.models import load_model
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
-from PyQt5.QtGui import QImage, QPixmap
-import mediapipe as mp
-from collections import Counter
-import time
-from collections import deque
+from ament_index_python.packages import get_package_share_directory
 
 os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'
 
@@ -144,25 +141,38 @@ class AgeModel():
         self.gender = None
         self.ageBuffer = []
         self.genderBuffer = []
+        self.detected = False
+        self.detected_time = 0
 
     def detectFace(self, frame):
-        face_image = None
-        gender_label = None
-        analysis = None
+        current_time = time.time()
+
+        if self.detected:
+            if(current_time - self.detected_time < 10):
+            # 얼굴이 감지된 후 10초가 지나지 않았다면 감지를 중지
+                return False
+            else:
+                self.detected = False
+
         try:
             analysis = DeepFace.analyze(frame, actions=['gender'], detector_backend='yunet', enforce_detection=False)
             if isinstance(analysis, list):
                 for face in analysis:
                     region = face['region']
                     x, y, w, h = region['x'], region['y'], region['w'], region['h']
-                    if w > 90 and h > 120:
-                        face_image = frame[y:y+h, x:x+w]
-                        gender_label = f"Gender: {face['dominant_gender']}"
+                    if w > 70 and h > 90:
+                        # 얼굴 주위에 사각형 그리기
+                        self.detected = True
+                        self.detected_time = time.time()  # 감지된 시간을 기록
+                        # cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+                        # gender_label = f"Gender: {face['dominant_gender']}"
+                        # cv2.putText(frame, gender_label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+                        print(f"Detected face with rectangle size: width={w}, height={h}")  # 사각형 크기 출력
                         break  # 첫 번째 얼굴만 반환
         except Exception as e:
             print(f"Error: {e}")
 
-        return face_image, gender_label, analysis
+        return self.detected
 
     def predictAge(self, faceImage):
         faceResized = cv2.resize(faceImage, (224, 224))

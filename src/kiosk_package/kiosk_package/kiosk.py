@@ -2,6 +2,7 @@ import sys
 import os
 from ament_index_python.packages import get_package_share_directory
 from interface_package.srv import IceRobot, OrderRecord, RestQuantity
+from std_srv.srv import Trigger
 import sys
 import rclpy
 from rclpy.node import Node
@@ -49,16 +50,17 @@ age = None  # 연령대
 menu_price = 0  # 주문 시에 쓰는 임시 변수
 orders = []  # 주문 내역 임시 저장 변수 (리스트)
 
-class MinimalClientAsync(Node, QObject):
+class Kiosk(Node, QObject):
     result_ready = pyqtSignal(int)
     restquantity = pyqtSignal(object)
 
     def __init__(self):
-        super().__init__('minimal_client_async')
+        super().__init__('kiosk')
         QObject.__init__(self)
         self.cli = self.create_client(OrderRecord, 'OrderRecord')
         self.cli2 = self.create_client(RestQuantity, 'RestQuantity')
         self.cli3 = self.create_client(IceRobot, "IceRobot")
+        self.cli4 = self.create_client(Trigger, "Greet")
         self.get_logger().info('node start')
         
         # while not self.cli.wait_for_service(timeout_sec=1.0):
@@ -147,6 +149,18 @@ class MinimalClientAsync(Node, QObject):
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')
 
+    def send_request4(self):
+        request = Trigger.Request()
+        future4 = self.cli4.call_async(request)
+        future4.add_done_callback(self.future4_callback)
+
+    def future4_callback(self, future):
+        try:
+            response = future.result()
+            self.get_logger().info(f'Result: {response.success}')
+            self.get_logger().info(f'Message: {response.message}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
 class FirstClass(QMainWindow,first_class):
     """오픈화면 & 메인화면 창"""
     clicked = pyqtSignal()
@@ -168,7 +182,7 @@ class FirstClass(QMainWindow,first_class):
 
         self.init_ros2()
 
-        self.ros2_client_worker.get_logger().info('ros2 client worker start')
+        self.kiosk_node.get_logger().info('ros2 client worker start')
 
         # 오픈화면 #######################################################################################################
         self.stackedWidget.setCurrentIndex(0)  # 시작할때 화면은 오픈 페이지로 설정
@@ -197,7 +211,7 @@ class FirstClass(QMainWindow,first_class):
         self.affogato_recommend_label.hide()
         self.affogato_soldout_label.hide()
 
-        self.ros2_client_worker.restquantity.connect(self.recommend_soldout)
+        self.kiosk_node.restquantity.connect(self.recommend_soldout)
 
         self.menu_pushButton.clicked.connect(lambda: self.check_current_page(1))
         self.option_pushButton.clicked.connect(lambda: self.check_current_page(2))
@@ -235,6 +249,8 @@ class FirstClass(QMainWindow,first_class):
         ###################손 제스쳐###################
         self.camera.action.connect(self.handleAction)
         #############################################
+        self.camera.detect.connect(self.greet)
+
     @pyqtSlot(np.ndarray)
     def update_image(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -279,8 +295,8 @@ class FirstClass(QMainWindow,first_class):
     
     def init_ros2(self):
         rclpy.init(args=None)
-        self.ros2_client_worker = MinimalClientAsync()
-        self.thread = threading.Thread(target=rclpy.spin, args=(self.ros2_client_worker,))
+        self.kiosk_node = Kiosk()
+        self.thread = threading.Thread(target=rclpy.spin, args=(self.kiosk_node,))
         self.thread.start()
 
     
@@ -288,7 +304,7 @@ class FirstClass(QMainWindow,first_class):
         """메인 페이지로 이동하고 타이머 시작"""
         self.stackedWidget.setCurrentWidget(self.main_page)
         self.camera.detectMode = 1 #나이 성별 판단 모델 동작
-        self.ros2_client_worker.send_request2()  # 메뉴별 재고현황 요청
+        self.kiosk_node.send_request2()  # 메뉴별 재고현황 요청
         self.start_main_timer()
     
     def start_main_timer(self):
@@ -405,7 +421,7 @@ class FirstClass(QMainWindow,first_class):
     
     def closeEvent(self, event):
         self.camera.stop()
-        self.ros2_client_worker.destroy_node()
+        self.kiosk_node.destroy_node()
         rclpy.shutdown()
         event.accept()  # 창을 닫음
 
@@ -736,9 +752,9 @@ class FirstClass(QMainWindow,first_class):
             # age = "20~30"  # 딥러닝 적용
             age, gender = self.camera.ageModel.getMostCommonAgeGender()
 
-            self.ros2_client_worker.send_request(order_number, date, menu, topping, price, quantity, gender, age)
-            self.ros2_client_worker.send_request2()
-            self.ros2_client_worker.send_request3(menu, order_num, tracking, shaking, half)
+            self.kiosk_node.send_request(order_number, date, menu, topping, price, quantity, gender, age)
+            self.kiosk_node.send_request2()
+            self.kiosk_node.send_request3(menu, order_num, tracking, shaking, half)
 
         orders.clear()
         self.tableWidget.setRowCount(0)
@@ -760,10 +776,15 @@ class FirstClass(QMainWindow,first_class):
     @pyqtSlot(str)
     def handleAction(self, action):
         print(action)
-        
+    
+    @pyqtSlot()
+    def greet(self):
+        self.kiosk_node.send_request4()
+
 class Camera(QObject):
     frame = pyqtSignal(np.ndarray)
     action = pyqtSignal(str)
+    detect = pyqtSignal()
     
     def __init__(self, camera_index=0):
         super().__init__()
@@ -800,7 +821,9 @@ class Camera(QObject):
                 print("Failed to grab frame")
                 break
             if self.detectMode == 0:
-                frame, _, _ = self.ageModel.detectFace(frame)
+                detected = self.ageModel.detectFace(frame)
+                if detected:
+                    self.detect.emit()
             elif self.detectMode == 1:
                 frame = self.ageModel.analyzeAgeGender(frame)
             elif self.detectMode == 2:
