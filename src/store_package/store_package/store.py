@@ -4,21 +4,20 @@ import glob
 from PyQt5.QtWidgets import *
 from PyQt5 import uic
 from PyQt5.QtCore import QDateTime, QDate, Qt, QRect, QObject, pyqtSignal, pyqtSlot, QPoint
-from PyQt5.QtGui import QColor, QFont, QPainter, QPixmap, QImage, QPen, QPolygon
+from PyQt5.QtGui import QColor, QFont, QPainter, QPixmap, QImage, QPen, QPolygon, QIntValidator
 import netifaces
 import threading
-
-
 import rclpy as rp
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, RobotStatusInfo
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
+from ament_index_python.packages import get_package_share_directory
+import time
 
-#학원
-uiPath = "/home/addinedu/amr_ws/aris_team5/Aris_Team5/src/store_package/ui"
-#집
-# uiPath = "/home/sungho/amr_ws/git_ws/Aris_Team5/src/store_package/ui"
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'  # 이 경로를 실제 Qt 플러그인 경로로 설정
+packageShareDirectory = get_package_share_directory('store_package')
+uiPath = os.path.join(packageShareDirectory, 'ui/')
 
 loginUi = glob.glob(os.path.join(uiPath, "login.ui"))[0]
 mainUi = glob.glob(os.path.join(uiPath, "store.ui"))[0]
@@ -38,6 +37,7 @@ class StoreNode(Node, QObject):
     menuDailySales = pyqtSignal(object)
     hourlySales = pyqtSignal(object)
     robotStatus = pyqtSignal(list, list)
+    allServicesAvailable = pyqtSignal()
 
     def __init__(self):
         super().__init__("store_node")
@@ -46,14 +46,13 @@ class StoreNode(Node, QObject):
             
     def initNode(self):
         self.get_logger().info("Store node started")
-        # time.sleep(0.5)  # Wait for 2 seconds to ensure all services are up
         self.qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             depth=10
         )
         self.initClients()
-        self. waitService()
+        self.waitServices()
 
     def initClients(self):
         self.dailyTotalSalesClient = self.create_client(DailyTotalSales, 'dailyTotalSales')
@@ -67,22 +66,44 @@ class StoreNode(Node, QObject):
     def initSub(self):
         self.jointTempSub = self.create_subscription(RobotStatusInfo, 'RobotStatusInfo', self.robotStatusInfocallback, self.qos_profile)
 
+    def waitServices(self):
+        self.timer = self.create_timer(1.0, self.checkServices)
 
-    def waitService(self):
-        while not self.dailyTotalSalesClient.wait_for_service(timeout_sec=1.0):
+    def checkServices(self):
+        all_services_available = True
+
+        if not self.dailyTotalSalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Daily total sales service not available, waiting again...')
-        while not self.monthTotalSalesClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.monthTotalSalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Month total sales service not available, waiting again...')
-        while not self.stocksClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.stocksClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Stocks service not available, waiting again...')
-        while not self.modifyStocksClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.modifyStocksClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Modify Stocks service not available, waiting again...')
-        while not self.dailySalesClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.dailySalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Daily sales service not available, waiting again...')
-        while not self.menuDailySalesClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.menuDailySalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Menu daily sales service not available, waiting again...')
-        while not self.hourlySalesClient.wait_for_service(timeout_sec=1.0):
+            all_services_available = False
+
+        if not self.hourlySalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Hourly sales service not available, waiting again...')
+            all_services_available = False
+
+        if all_services_available:
+            self.get_logger().info('All services are now available.')
+            self.timer.cancel()
+            self.allServicesAvailable.emit()
 
     def requestDailyTotalSales(self, year, month):
         request = DailyTotalSales.Request()
@@ -259,35 +280,76 @@ class LoginPage(QDialog, loginClass):
         super().__init__()
         self.initWindow()        
         self.setHostAddress()
-
+        self.storeNode = None
+        self.storeNodeThread = None
+        int_validator = QIntValidator(0, 232)
+        self.domainIDLine.setValidator(int_validator)
 
     def initWindow(self):
         self.setupUi(self)
         self.setWindowTitle("Login")
         self.loginBtn.clicked.connect(self.loginBtnClicked)
+        self.cancelBtn.clicked.connect(self.cancelBtnClicked)
 
     def setHostAddress(self):
         try:
-            # 첫 번째 네트워크 인터페이스의 IP 주소 가져오기
-            iface = netifaces.interfaces()[1]
+            iface = 'wlp4s0'
             addrs = netifaces.ifaddresses(iface)
-            ip = addrs[netifaces.AF_INET][0]['addr']
-            self.hostLine.setText(ip)
+            if netifaces.AF_INET in addrs:
+                ip_address = addrs[netifaces.AF_INET][0]['addr']
+                self.hostLine.setText(ip_address)
+            else:
+                self.hostLine.setText("No valid IP found for wlp4s0")
         except Exception as e:
             self.hostLine.setText("Unable to get IP")
-    
-    def loginBtnClicked(self):
-        domainID = int(self.domainIDLine.text())
-        os.environ['ROS_DOMAIN_ID'] = str(domainID)
+            print(e)
         
-        rp.init()
-        self.storeNode = StoreNode()
-        self.storeNodeThread = threading.Thread(target=rp.spin, args=(self.storeNode,))
-        self.storeNodeThread.start()
-    
+    def loginBtnClicked(self):
+        try:
+            domainID = int(self.domainIDLine.text())
+            if domainID < 0 or domainID > 232:
+                raise ValueError
+
+            os.environ['ROS_DOMAIN_ID'] = str(domainID)
+
+            if self.storeNode is None:
+                rp.init()
+                self.storeNode = StoreNode()
+                self.storeNodeThread = threading.Thread(target=rp.spin, args=(self.storeNode,))
+                self.storeNodeThread.setDaemon(True)
+                self.storeNodeThread.start()
+                self.loginBtn.setEnabled(False)
+
+                self.storeNode.allServicesAvailable.connect(self.MoveToMain)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a valid integer between 0 and 232 for the domain ID.")
+
+
+
+    def cancelBtnClicked(self):
+        if self.storeNode is not None:
+            self.storeNode.timer.cancel()
+            time.sleep(2)
+            self.storeNode.destroy_node()
+            rp.shutdown()
+            self.storeNode = None
+        if self.storeNodeThread is not None:
+            self.storeNodeThread.join()
+            self.storeNodeThread = None
+            self.loginBtn.setEnabled(True)
+
+    def MoveToMain(self):
         self.mainWindow = MainPage(self.storeNode)
         self.mainWindow.show()
         self.close()
+    
+    def closeEvent(self, event):
+        if self.storeNode is not None:
+            self.storeNode.timer.cancel()
+            time.sleep(2)
+            self.storeNode.destroy_node()
+            rp.shutdown()
+        event.accept()  # 창을 닫음
 
 class MainPage(QMainWindow, mainClass):
     def __init__(self, storeNode):
@@ -708,7 +770,6 @@ class DailySalesPage(QDialog, dailySalesClass):
         # QImage를 QPixmap으로 변환하여 QLabel에 설정
         pixmap = QPixmap.fromImage(image)
         self.hourlySalesGraph.setPixmap(pixmap)
-
 
 class RobotManagePage(QDialog, robotClass):
     def __init__(self, storeNode):

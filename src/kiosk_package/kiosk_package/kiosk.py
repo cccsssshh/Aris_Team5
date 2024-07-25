@@ -6,6 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 package_share_directory = get_package_share_directory('kiosk_package')
 ui_file_path = os.path.join(package_share_directory, 'ui/kiosk.ui')
+image_folder_path = os.path.join(package_share_directory, 'ui/image/')
 
 from interface_package.srv import IceRobot, OrderRecord, RestQuantity
 import sys
@@ -158,7 +159,7 @@ class FirstClass(QMainWindow,first_class):
     
     # 이미지 처리 함수 ####################################################################################################
     def set_ad_image(self):
-        self.ad_label.setPixmap(QPixmap('/home/k/Documents/QT/ARIS.jpg').scaled(QSize(768, 1024)))  # 첫번째 이미지
+        self.ad_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'ARIS.jpg')).scaled(QSize(768, 1024)))  # 첫번째 이미지
 
     ####################################################################################################################
 
@@ -181,13 +182,13 @@ class FirstClass(QMainWindow,first_class):
         self.ad_label.mousePressEvent = self.start_main_page # 페이지 이동)
 
         # 메인화면 #######################################################################################################
-        self.berry_label.setPixmap(QPixmap('/home/k/Documents/QT/berry.webp').scaled(QSize(377, 198)))
-        self.choco_label.setPixmap(QPixmap('/home/k/Documents/QT/choco.webp').scaled(QSize(377, 198)))
-        self.banana_label.setPixmap(QPixmap('/home/k/Documents/QT/banana.webp').scaled(QSize(377, 198)))
-        self.affogato_label.setPixmap(QPixmap('/home/k/Documents/QT/affogato.jpg').scaled(QSize(377, 198)))
-        self.serving_label.setPixmap(QPixmap('/home/k/Documents/QT/serving.jpg').scaled(QSize(243, 214)))
-        self.hello_label.setPixmap(QPixmap('/home/k/Documents/QT/hand.jpg').scaled(QSize(243, 214)))
-        self.half_label.setPixmap(QPixmap('/home/k/Documents/QT/half_half.jpg').scaled(QSize(243, 214)))
+        self.berry_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'berry.webp')).scaled(QSize(377, 198)))
+        self.choco_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'choco.webp')).scaled(QSize(377, 198)))
+        self.banana_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'banana.webp')).scaled(QSize(377, 198)))
+        self.affogato_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'affogato.jpg')).scaled(QSize(377, 198)))
+        self.serving_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'serving.jpg')).scaled(QSize(243, 214)))
+        self.hello_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'hand.jpg')).scaled(QSize(243, 214)))
+        self.half_label.setPixmap(QPixmap(os.path.join(image_folder_path, 'half_half.jpg')).scaled(QSize(243, 214)))
 
         self.berry_recommend_label.hide()
         self.berry_soldout_label.hide()

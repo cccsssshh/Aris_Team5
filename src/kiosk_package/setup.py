@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+from glob import glob
 
 package_name = 'kiosk_package'
 
@@ -11,7 +12,8 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/ui', ['ui/kiosk.ui']),
-        ('share/' + package_name + '/models', ['models/gesture_model_v2.keras', 'models/gesture_model_v2.hdf5', 'models/age_model.hdf5'])
+        ('share/' + package_name + '/models', ['models/gesture_model_v2.keras', 'models/gesture_model_v2.hdf5', 'models/age_model.hdf5']),
+        ('share/' + package_name + '/ui/image', glob('ui/image/*.jpg') + glob('ui/image/*.webp')),
     ],
     install_requires=[
         'setuptools',
