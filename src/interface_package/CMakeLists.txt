@@ -30,6 +30,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/IceRobot.srv"
   "srv/OrderRecord.srv"
   "srv/RestQuantity.srv"
+  "srv/Age.srv"
+  "srv/MenuTopping.srv"
 )
 
 
