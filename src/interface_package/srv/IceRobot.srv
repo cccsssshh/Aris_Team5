@@ -1,8 +1,7 @@
-string menu
+string[] menu
 int16 topping
-int16 quantity
-bool shaking
-bool picture
-bool tracking
+string shaking #hello
+string half #half
+string tracking #serving
 ---
 bool success
