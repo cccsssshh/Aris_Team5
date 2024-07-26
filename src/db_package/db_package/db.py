@@ -228,15 +228,28 @@ class DataBaseNode(Node):
 
         # 데이터 삽입
         self.dbManager.insertSalesData(data)
-        # 메뉴 재고 업데이트
-        menuStockData = [(menu, -quantity)]
-        self.dbManager.updateMenuStock(menuStockData)
+        
+        
+        curMenuStocks, curToppingStocks = self.dbManager.getRestQuantity()
 
-        # 토핑 재고 업데이트
-        toppingStockData = [(topping, -quantity)]
+        menu_stock_dict = {name: stock for name, stock in curMenuStocks}
+        topping_stock_dict = {name: stock for name, stock in curToppingStocks}
+
+        # 현재 재고 확인 및 업데이트
+        if menu in menu_stock_dict:
+            current_menu_stock = menu_stock_dict[menu]
+            new_menu_stock = current_menu_stock - quantity
+            # 메뉴 재고 업데이트
+            menuStockData = [(menu, new_menu_stock)]
+            self.dbManager.updateMenuStock(menuStockData)
+
+        if topping in topping_stock_dict:
+            current_topping_stock = topping_stock_dict[topping]
+            new_topping_stock = current_topping_stock - quantity
+            # 토핑 재고 업데이트
+        
+        toppingStockData = [(topping, new_topping_stock)]
         self.dbManager.updateToppingStock(toppingStockData)
-        response.success = True
-
         return response
     
     def menuToppingCallback(self, request, response):
@@ -262,10 +275,6 @@ class DataBaseNode(Node):
         response.counts = counts
         
         return response
-
-
-
-
 
     def ageCallback(self, request, response):
         # 요청 데이터에서 날짜 추출
