@@ -5,7 +5,7 @@ import random
 import rclpy as rp
 from rclpy.node import Node
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, Item
-from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales, OrderRecord, RestQuantity
+from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales, OrderRecord, RestQuantity, MenuTopping, Age
 
 class DataBaseNode(Node):
     def __init__(self):
@@ -30,8 +30,10 @@ class DataBaseNode(Node):
         self.dailySalesService = self.create_service(DailySales, "dailySales", self.dailySalesCallback)
         self.MenuDailySalesService = self.create_service(MenuDailySales, "menuDailySales", self.menuDailySalesCallback)
         self.hourlySalesService = self.create_service(HourlySales, 'hourlySales', self.hourlySalesCallback)
-        self.OrderRecordService = self.create_service(OrderRecord, 'OrderRecord', self.orderRecordCallback)
-        self.RestQuantityService = self.create_service(RestQuantity, 'RestQuantity', self.restQuantityCallback)
+        self.orderRecordService = self.create_service(OrderRecord, 'OrderRecord', self.orderRecordCallback)
+        self.restQuantityService = self.create_service(RestQuantity, 'RestQuantity', self.restQuantityCallback)
+        self.menuToppingService = self.create_service(MenuTopping, 'MenuTopping', self.menuToppingCallback)
+        self.ageService = self.create_service(Age, 'Age', self.ageCallback)
         
     def dailyTotalSalesCallback(self, request, response):
         year = request.year
@@ -236,6 +238,71 @@ class DataBaseNode(Node):
         response.success = True
 
         return response
+    
+    def menuToppingCallback(self, request, response):
+        year = request.year
+        month = request.month
+        day = request.day
+        
+        # 메뉴와 토핑의 판매 데이터 가져오기
+        menu_names, topping_names, counts = self.dbManager.getMenuToppingPreferences(year, month, day)
+        
+        # 데이터 검증 및 응답 설정
+        if not (len(menu_names) == len(topping_names) == len(counts)):
+            raise ValueError("Mismatch in lengths of menu_names, topping_names, and counts lists")
+        
+        # 로깅
+        self.get_logger().info(f"Fetched Menu Names: {menu_names}")
+        self.get_logger().info(f"Fetched Topping Names: {topping_names}")
+        self.get_logger().info(f"Fetched Counts: {counts}")
+        
+        # 응답에 데이터 설정
+        response.menu_names = menu_names
+        response.topping_names = topping_names
+        response.counts = counts
+        
+        return response
+
+
+
+
+
+    def ageCallback(self, request, response):
+        # 요청 데이터에서 날짜 추출
+        year = request.year
+        month = request.month
+        day = request.day
+        
+        # 나이대별 판매 데이터 가져오기
+        age_data = self.dbManager.getSalesByAgeGroup(year, month, day)
+        
+        # 데이터 검증 및 응답 설정
+        age_groups = []
+        age_group_sales = []
+        
+        for data in age_data:
+            # 나이대 추가
+            age_groups.append(data[0])
+            
+            # 판매량 검증 및 변환
+            try:
+                sales = int(data[1])  # 판매량을 명시적으로 int로 변환
+            except ValueError:
+                raise ValueError(f"Expected int type for sales count but got {type(data[1])} with value {data[1]}")
+            
+            # 판매량이 int32 범위 내에 있는지 확인
+            if not (-2147483648 <= sales <= 2147483647):
+                raise ValueError(f"Sales count {sales} is out of range for int32")
+            
+            # 판매량 추가
+            age_group_sales.append(sales)
+        
+        # 응답 필드 설정
+        response.age_groups = age_groups
+        response.age_group_sales = age_group_sales
+        
+        return response
+
 
 class DatabaseManager:
     def __init__(self, host, user, password, database):
@@ -377,7 +444,91 @@ class DatabaseManager:
         toppingResult = self._executeQuery(toppingQuery, fetch=True)
 
         return menuResult, toppingResult
+    
+    def getMenuToppingPreferences(self, year, month, day):
+        query = """
+        SELECT 
+            m.name AS menu_name,
+            t.name AS topping_name,
+            COUNT(*) AS count
+        FROM 
+            sales s
+        JOIN 
+            menu m ON s.menu_id = m.id
+        JOIN 
+            topping t ON s.topping_id = t.id
+        WHERE 
+            DATE(s.order_datetime) = %s
+            AND m.name != '아포가토'  -- '아포가토'를 제외
+        GROUP BY 
+            m.name, t.name
+        ORDER BY 
+            count DESC;
+        """
+        
+        # 날짜 포맷: 'YYYY-MM-DD'
+        date_str = f"{year:04d}-{month:02d}-{day:02d}"
+        result = self._executeQuery(query, (date_str,), fetch=True)
+        
+        menu_names = []
+        topping_names = []
+        counts = []
+        
+        # 결과를 튜플로 처리
+        for row in result:
+            # 결과 확인
+            # print(f"Row: {row}")
+            
+            try:
+                # 튜플의 인덱스에 맞춰 데이터 접근
+                menu_name = row[0]
+                topping_name = row[1]
+                count = int(row[2])  # 판매 개수를 int로 변환
+                
+                menu_names.append(menu_name)
+                topping_names.append(topping_name)
+                counts.append(count)
+            
+            except ValueError as e:
+                print(f"Error processing row: {row}. Exception: {e}")
+        
+        # print(f"Menu Names: {menu_names}")
+        # print(f"Topping Names: {topping_names}")
+        # print(f"Counts: {counts}")
 
+        return menu_names, topping_names, counts
+
+
+    def getSalesByAgeGroup(self, year, month, day):
+        date_str = f"{year}-{month:02d}-{day:02d}"
+
+        query = """
+        SELECT 
+            CASE
+                WHEN age BETWEEN 0 AND 9 THEN '0-9'
+                WHEN age BETWEEN 10 AND 19 THEN '10-19'
+                WHEN age BETWEEN 20 AND 29 THEN '20-29'
+                WHEN age BETWEEN 30 AND 39 THEN '30-39'
+                WHEN age BETWEEN 40 AND 49 THEN '40-49'
+                WHEN age BETWEEN 50 AND 59 THEN '50-59'
+                ELSE '60+'
+            END AS age_group,
+            SUM(quantity) AS total_sales
+        FROM 
+            sales
+        WHERE 
+            DATE(order_datetime) = %s
+        GROUP BY 
+            age_group
+        ORDER BY 
+            age_group;
+        """
+        
+        # Execute the query and return results
+        result = self._executeQuery(query, (date_str,), fetch=True)
+        return result
+    
+##################################################################################
     def insertDummyData(self, numRecords, startDate, endDate):
         genders = ['M', 'F']
         menu_ids = [1, 2, 3, 4]  # menu 테이블의 id 값

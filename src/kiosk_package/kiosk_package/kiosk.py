@@ -1,9 +1,12 @@
 import sys
 import os
 from ament_index_python.packages import get_package_share_directory
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+
 from interface_package.srv import IceRobot, OrderRecord, RestQuantity
-from std_srv.srv import Trigger
-import sys
+from std_srvs.srv import Trigger
 import rclpy
 from rclpy.node import Node
 from PyQt5.QtWidgets import *
@@ -21,8 +24,6 @@ import threading
 import torch
 from deepface import DeepFace
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
 package_share_directory = get_package_share_directory('kiosk_package')
 ui_file_path = os.path.join(package_share_directory, 'ui/kiosk.ui')
 image_folder_path = os.path.join(package_share_directory, 'ui/image/')
@@ -250,6 +251,9 @@ class FirstClass(QMainWindow,first_class):
         self.camera.action.connect(self.handleAction)
         #############################################
         self.camera.detect.connect(self.greet)
+
+        self.order_status = 0
+        self.check_flag = False
 
     @pyqtSlot(np.ndarray)
     def update_image(self, frame):
@@ -775,7 +779,165 @@ class FirstClass(QMainWindow,first_class):
 
     @pyqtSlot(str)
     def handleAction(self, action):
-        print(action)
+        global orders, menu, order_num, tracking, shaking, half, order_number, date, topping, price, quantity, gender, age, menu_price
+        
+        if self.order_status == 0:
+            if not self.check_flag:
+                menu = self.menu_selected(action)
+                menu_price = self.price_selected(action)
+                self.check_flag = True
+            else:
+                check = self.checking(action)
+                if check:
+                    font = QFont()
+                    font.setPointSize(15)
+                    self.order_label_1.setFont(font)
+                    self.order_label_1.setText(menu)
+                    self.order_label_1.setAlignment(Qt.AlignCenter)
+                    self.order_status += 1
+                    self.check_flag = False
+                else:
+                    print("다시 시도하세요")
+        elif self.order_status == 1:
+            check = self.checking(action)
+            if check:
+                font = QFont()
+                font.setPointSize(15)
+                self.order_label_2.setFont(font)
+                tracking = "serving"
+                self.order_label_2.setText(tracking)
+                self.order_label_2.setAlignment(Qt.AlignCenter)
+                self.order_status += 1
+            else:
+                print("다시 시도하세요")
+        elif self.order_status == 2:
+            check = self.checking(action)
+            if check:
+                font = QFont()
+                font.setPointSize(15)
+                self.order_label_3.setFont(font)
+                shaking = "hello"
+                self.order_label_3.setText(shaking)
+                self.order_label_3.setAlignment(Qt.AlignCenter)
+                self.order_status += 1
+            else:
+                print("다시 시도하세요")
+        elif self.order_status == 3:
+            check = self.checking(action)
+            if check:
+                font = QFont()
+                font.setPointSize(15)
+                self.order_label_4.setFont(font)
+                half = "half"
+                self.order_label_4.setText(half)
+                self.order_label_4.setAlignment(Qt.AlignCenter)
+                topping = "topping A"
+                orders.append({
+                    'menu': menu,
+                    'order_num': order_num,
+                    'tracking': tracking,
+                    'shaking': shaking,
+                    'half': half,
+                    'menu_price': menu_price,
+                    'topping': topping
+                })
+                quantity += 1
+                price += menu_price
+                self.quantity_label.setText(str(quantity))
+                self.quantity_label.setAlignment(Qt.AlignCenter)
+                self.price_label.setText(str(price))
+                self.price_label.setAlignment(Qt.AlignCenter)
+                self.order_status += 1
+            else:
+                print("다시 시도하세요")
+        elif self.order_status == 4:
+            check = self.checking(action)
+            if check:
+                order_number += 1
+                current_time = QDateTime.currentDateTime()
+                formatted_time = current_time.toString("yyyyMMdd HH:mm")
+                for i, order in enumerate(orders):
+                    # Kiosk - Robot, DB
+                    menu = str(order['menu'])
+                    # Kiosk - Robot
+                    order_num = i + 1
+                    tracking = str(order['tracking'])
+                    shaking = str(order['shaking'])
+                    half = str(order['half'])
+                    # Kiosk - DB
+                    order_number
+                    date = formatted_time
+                    topping
+                    price
+                    quantity
+                    # gender = "female"  # 딥러닝 적용
+                    # age = "20~30"  # 딥러닝 적용
+                    age, gender = self.camera.ageModel.getMostCommonAgeGender()
+                    self.ros2_client_worker.send_request(order_number, date, menu, topping, price, quantity, gender, age)
+                    self.ros2_client_worker.send_request2()
+                    self.ros2_client_worker.send_request3(menu, order_num, shaking, half, tracking)
+                orders.clear()
+                self.tableWidget.setRowCount(0)
+                self.order_label_1.clear()
+                self.order_label_2.clear()
+                self.order_label_3.clear()
+                self.order_label_4.clear()
+                self.quantity_label.clear()
+                self.price_label.clear()
+                menu = None
+                menu_price = 0
+                order_num = 0
+                tracking = None
+                shaking = None
+                half = None
+                topping = None
+                price = 0
+                quantity = 0
+                self.order_status = 0
+                self.check_flag = False
+                self.stackedWidget.setCurrentWidget(self.open_page)
+            else:
+                print("다시 시도하세요")
+
+
+    def menu_selected(self, action):
+            global menu, menu_price
+            if action == "1":
+                # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+                print("output_1.mp3")
+                menu = "berry"
+                menu_price = 2500
+            elif action == "2":
+                # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+                print("output_1.mp3")
+                menu = "choco"
+                menu_price = 2500
+            elif action == "3":
+                # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+                print("output_1.mp3")
+                menu = "banana"
+                menu_price = 2000
+
+    def price_selected(self, action):
+        global menu, menu_price
+        if action == "1":
+            # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+            # print("output_1.mp3")
+            menu_price = 2500
+        elif action == "2":
+            # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+            # print("output_1.mp3")
+            menu_price = 2500
+        elif action == "3":
+            # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
+            # print("output_1.mp3")
+            menu_price = 2000
+        return menu_price
+    def checking(self, action):
+        if action == "O":
+            return True
+        elif action == "X":
+            return False
     
     @pyqtSlot()
     def greet(self):

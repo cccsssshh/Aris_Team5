@@ -1,5 +1,9 @@
 import sys
 import os
+from ament_index_python.packages import get_package_share_directory
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 import cv2
 import time
 import numpy as np
@@ -10,15 +14,13 @@ from deepface import DeepFace
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.models import load_model
-from ament_index_python.packages import get_package_share_directory
 
 os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-package_share_directory = get_package_share_directory('kiosk_package')
-gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
-age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
 
+package_share_directory = get_package_share_directory('kiosk_package')
+age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
+gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
 class GestureModel():
     def __init__(self):
         self.model = load_model(gesture_model_file_path)  # 동작 인식 모델

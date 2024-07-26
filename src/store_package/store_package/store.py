@@ -11,7 +11,7 @@ import rclpy as rp
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, RobotStatusInfo
-from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales
+from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales, MenuTopping, Age
 from ament_index_python.packages import get_package_share_directory
 import time
 
@@ -36,6 +36,8 @@ class StoreNode(Node, QObject):
     dailySales = pyqtSignal(object)
     menuDailySales = pyqtSignal(object)
     hourlySales = pyqtSignal(object)
+    menuToppingSales = pyqtSignal(list, list, list)
+    ageSales = pyqtSignal(list, list)
     robotStatus = pyqtSignal(list, list)
     allServicesAvailable = pyqtSignal()
 
@@ -62,6 +64,8 @@ class StoreNode(Node, QObject):
         self.dailySalesClient = self.create_client(DailySales, "dailySales")
         self.menuDailySalesClient = self.create_client(MenuDailySales, "menuDailySales")
         self.hourlySalesClient = self.create_client(HourlySales, 'hourlySales')
+        self.menuToppingClient = self.create_client(MenuTopping, 'MenuTopping')
+        self.ageClient = self.create_client(Age, 'Age')
 
     def initSub(self):
         self.jointTempSub = self.create_subscription(RobotStatusInfo, 'RobotStatusInfo', self.robotStatusInfocallback, self.qos_profile)
@@ -98,6 +102,14 @@ class StoreNode(Node, QObject):
 
         if not self.hourlySalesClient.wait_for_service(timeout_sec=0.1):
             self.get_logger().info('Hourly sales service not available, waiting again...')
+            all_services_available = False
+            
+        if not self.menuToppingClient.wait_for_service(timeout_sec=0.1):
+            self.get_logger().info('MenuTopping service not available, waiting again...')
+            all_services_available = False
+
+        if not self.ageClient.wait_for_service(timeout_sec=0.1):
+            self.get_logger().info('Age service not available, waiting again...')
             all_services_available = False
 
         if all_services_available:
@@ -245,6 +257,61 @@ class StoreNode(Node, QObject):
         self.robotStatus.emit(joints, temperatures)
         self.get_logger().info(f'\n Joints: {joints}\n Temperatures: {temperatures}')
 
+    def requestMenuToppingSales(self, year, month, day):
+        request = MenuTopping.Request()
+        request.year = year
+        request.month = month
+        request.day = day
+        self.get_logger().info(f"Request to MenuToppingSales service - year: {year}, month: {month}, day: {day}")
+
+        future = self.menuToppingClient.call_async(request)
+        future.add_done_callback(self.menuToppingSalesCallback)
+        
+    def menuToppingSalesCallback(self, future):
+        try:
+            response = future.result()
+            
+            # 서비스 응답에서 데이터 추출
+            menu_names = response.menu_names
+            topping_names = response.topping_names
+            counts = list(response.counts)
+
+            # 로깅
+            self.get_logger().info(f"Menu Names: {menu_names}")
+            self.get_logger().info(f"Topping Names: {topping_names}")
+            self.get_logger().info(f"Counts: {counts}")
+
+            # Qt 신호로 데이터 전송
+            self.menuToppingSales.emit(menu_names, topping_names, counts)
+
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+    def requestAgeSales(self, year, month, day):
+        request = Age.Request()
+        request.year = year
+        request.month = month
+        request.day = day
+        self.get_logger().info(f"Request to AgeSales service - year: {year}, month: {month}, day: {day}")
+
+        future = self.ageClient.call_async(request)
+        future.add_done_callback(self.ageSalesCallback)
+
+    def ageSalesCallback(self, future):
+        try:
+            response = future.result()
+            # array를 list로 변환
+            age_groups = response.age_groups
+            age_group_sales = list(response.age_group_sales)  # array를 list로 변환
+            self.get_logger().info(f"Age Groups: {age_groups}")
+            self.get_logger().info(f"Age Group Sales: {age_group_sales}")
+
+            # 신호 발송
+            self.ageSales.emit(age_groups, age_group_sales)
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {e}')
+
+
 class Calendar(QCalendarWidget):
     dateClicked = pyqtSignal(QDate)
 
@@ -324,8 +391,6 @@ class LoginPage(QDialog, loginClass):
         except ValueError:
             QMessageBox.warning(self, "Invalid Input", "Please enter a valid integer between 0 and 232 for the domain ID.")
 
-
-
     def cancelBtnClicked(self):
         if self.storeNode is not None:
             self.storeNode.timer.cancel()
@@ -341,7 +406,7 @@ class LoginPage(QDialog, loginClass):
     def MoveToMain(self):
         self.mainWindow = MainPage(self.storeNode)
         self.mainWindow.show()
-        self.close()
+        self.hide()
     
     def closeEvent(self, event):
         if self.storeNode is not None:
@@ -494,12 +559,15 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.month = date.month()
         self.day = date.day()
         self.storeNode = storeNode
+        self.dailySales = None
         self.initWindow()
     
     def initWindow(self):
         self.dailySalesRBtn.toggled.connect(self.showDailySales) # 일별 판매 기록 버튼 연결
         self.menuSalesRBtn.toggled.connect(self.showMenuSales) # 메뉴별 판매 기록 버튼 연결
         self.hourlySalesRBtn.toggled.connect(self.showHourlySales)
+        self.menuToppingSalesRBtn.toggled.connect(self.showmenuToppingSales)
+        self.ageSalesRBtn.toggled.connect(self.showAgeSales)
         self.dailySalesRBtn.setChecked(True) # 일별 판매 기록 버튼 활성화
         self.dailySalesTable.verticalHeader().setVisible(False) #일별 판매 기록 테이블의 왼쪽의 번호 비활성화
         self.handelqtSignal()
@@ -510,6 +578,8 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.storeNode.requestDailySales(self.year, self.month, self.day)
         self.storeNode.requestMenuDailySales(self.year, self.month, self.day)
         self.storeNode.requestHourlySales(self.year, self.month, self.day)
+        self.storeNode.requestMenuToppingSales(self.year, self.month, self.day)
+        self.storeNode.requestAgeSales(self.year, self.month, self.day)
 
     def updateSelectedDateLabel(self, date):
         self.dateLabel.setText(date.toString('yyyy년 MM월 dd일'))
@@ -518,6 +588,8 @@ class DailySalesPage(QDialog, dailySalesClass):
         self.storeNode.dailySales.connect(self.setDailySalesData)
         self.storeNode.menuDailySales.connect(self.setMenuSalesData)
         self.storeNode.hourlySales.connect(self.setHourlySalesData)
+        self.storeNode.ageSales.connect(self.setAgeSalesData)
+        self.storeNode.menuToppingSales.connect(self.setMenuToppingSalesData)
 
     @pyqtSlot(object)
     def setDailySalesData(self, data):
@@ -529,13 +601,28 @@ class DailySalesPage(QDialog, dailySalesClass):
     def setMenuSalesData(self, data):
         self.menuDailySales = data
         if self.menuSalesRBtn.isChecked():
-            self.drawBarGraph(data)
+            self.drawDailyBarGraph(data)
 
     @pyqtSlot(object)
     def setHourlySalesData(self, data):
         self.hourlySales = data
         if self.hourlySalesRBtn.isChecked():
             self.drawLineGraph(data)
+
+    @pyqtSlot(list, list, list)
+    def setMenuToppingSalesData(self, menu_names, topping_names, counts):
+        self.menuNames = menu_names
+        self.toppingNames = topping_names
+        self.counts = counts
+        if self.menuToppingSalesRBtn.isChecked():
+            self.drawMenuToppingGridGraph(self, menu_names, topping_names, counts)
+
+    @pyqtSlot(list, list)
+    def setAgeSalesData(self, age_groups, age_group_sales):
+        self.ageGroups = age_groups
+        self.ageGroupSales = age_group_sales
+        if self.ageSalesRBtn.isChecked():
+            self.drawLineGraph(age_groups, age_group_sales)
 
     def updateTable(self, data):
         self.dailySalesTable.setRowCount(len(data))
@@ -568,19 +655,30 @@ class DailySalesPage(QDialog, dailySalesClass):
         if self.dailySalesRBtn.isChecked():
             self.stackedWidget.setCurrentIndex(0)
             self.dailySalesTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            self.updateTable(self.dailySales)
+            if self.dailySales:
+                self.updateTable(self.dailySales)
 
     def showMenuSales(self):
         if self.menuSalesRBtn.isChecked():
             self.stackedWidget.setCurrentIndex(1)
-            self.drawBarGraph(self.menuDailySales)
+            self.drawDailyBarGraph(self.menuDailySales)
 
     def showHourlySales(self):
         if self.hourlySalesRBtn.isChecked():
             self.stackedWidget.setCurrentIndex(2)
             self.drawLineGraph(self.hourlySales)
 
-    def drawBarGraph(self, data):
+    def showmenuToppingSales(self):
+        if self.menuToppingSalesRBtn.isChecked():
+            self.stackedWidget.setCurrentIndex(3)
+            self.drawMenuToppingGridGraph(self.menuNames, self.toppingNames, self.counts)
+
+    def showAgeSales(self):
+        if self.ageSalesRBtn.isChecked():
+            self.stackedWidget.setCurrentIndex(4)
+            self.drawAgeBarGraph(self.ageGroups, self.ageGroupSales)
+
+    def drawDailyBarGraph(self, data):
         # 모든 메뉴 아이템을 정의
         all_menu_items = ['딸기', '바나나', '초코', '아포가토']
 
@@ -682,9 +780,6 @@ class DailySalesPage(QDialog, dailySalesClass):
         pixmap = QPixmap.fromImage(image)
         self.menuSalesGraph.setPixmap(pixmap)
 
-
-
-
     def drawLineGraph(self, data):
         # name 속성을 사용하여 시간대별 판매량을 저장
         sales_dict = {int(item.name): item.quantity for item in data}
@@ -770,6 +865,116 @@ class DailySalesPage(QDialog, dailySalesClass):
         # QImage를 QPixmap으로 변환하여 QLabel에 설정
         pixmap = QPixmap.fromImage(image)
         self.hourlySalesGraph.setPixmap(pixmap)
+
+    def drawMenuToppingGridGraph(self, menu_names, topping_names, counts):
+        # QLabel의 크기 가져오기
+        size = self.menuSalesGraph.size()
+        width, height = size.width(), size.height()
+
+        # QImage 생성
+        image = QImage(width, height, QImage.Format_ARGB32)
+        image.fill(Qt.white)
+
+        # QPainter로 QImage에 그리기
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 그래프 영역 정의
+        margin = 80
+        graph_width = width - 2 * margin
+        graph_height = height - 2 * margin
+
+        # 메뉴와 토핑의 수 (3x3 그리드 가정)
+        unique_menus = sorted(set(menu_names))
+        unique_toppings = sorted(set(topping_names))
+        num_menus = len(unique_menus)
+        num_toppings = len(unique_toppings)
+
+        # 셀 크기 정의
+        cell_width = graph_width / num_menus
+        cell_height = graph_height / num_toppings
+
+        # 판매량 범위 계산
+        min_count = min(counts) if counts else 0
+        max_count = max(counts) if counts else 1  # 최대값이 0일 때 대비를 위한 기본값
+
+        # 판매량이 0이 아닌 최소값을 찾습니다.
+        nonzero_counts = [count for count in counts if count > 0]
+        min_nonzero_count = min(nonzero_counts) if nonzero_counts else 0
+        max_nonzero_count = max(nonzero_counts) if nonzero_counts else max_count
+
+        def get_color_for_count(count, min_nonzero_count, max_nonzero_count):
+            # 색상 범위 설정
+            color_start = QColor('#FFFFFF')  # 흰색 (판매량이 최소일 때의 색상)
+            color_end = QColor('#77FF77')    # 연두색 (판매량이 최대일 때의 색상)
+
+            if count == 0:
+                return QColor(255, 255, 255, 0)  # 완전히 투명한 흰색
+
+            # 판매량 비율 계산
+            if max_nonzero_count > min_nonzero_count:
+                ratio = (count - min_nonzero_count) / (max_nonzero_count - min_nonzero_count)
+            else:
+                ratio = 0
+
+            # 색상 보간 (비율에 따라 색상 조정)
+            red = int(color_end.red() * ratio + color_start.red() * (1 - ratio))
+            green = int(color_end.green() * ratio + color_start.green() * (1 - ratio))
+            blue = int(color_end.blue() * ratio + color_start.blue() * (1 - ratio))
+            
+            return QColor(red, green, blue)
+
+        # 판매량 데이터를 매핑
+        counts_dict = {(menu, topping): count for (menu, topping), count in zip(zip(menu_names, topping_names), counts)}
+
+        # 그리드 그리기
+        for i, menu in enumerate(unique_menus):
+            for j, topping in enumerate(unique_toppings):
+                count = counts_dict.get((menu, topping), 0)  # 메뉴와 토핑의 판매량
+
+                x = margin + i * cell_width
+                y = margin + j * cell_height
+                cell_rect = QRect(int(x), int(y), int(cell_width), int(cell_height))
+
+                # 셀 배경색
+                cell_color = get_color_for_count(count, min_nonzero_count, max_nonzero_count)
+                painter.setBrush(cell_color)
+                painter.drawRect(cell_rect)
+
+                # 셀 테두리 색상
+                painter.setPen(QPen(QColor('#000000'), 2))  # 검은색 테두리, 2픽셀 두께
+                painter.drawRect(cell_rect)
+
+                # 텍스트 추가
+                painter.setPen(Qt.black)
+                painter.setFont(QFont('Arial', 10))
+                text = f"{count}" if count > 0 else ""
+                painter.drawText(cell_rect, Qt.AlignCenter, text)
+
+        # X축 제목 추가 (메뉴)
+        painter.setFont(QFont('Arial', 12))
+        for i, menu in enumerate(unique_menus):
+            x = margin + (i + 0.5) * cell_width
+            painter.drawText(int(x), height - margin + 20, menu)
+        
+        # Y축 제목 추가 (토핑)
+        painter.setFont(QFont('Arial', 12))
+        for j, topping in enumerate(unique_toppings):
+            y = margin + (j + 0.5) * cell_height
+            painter.drawText(margin - 60, int(y), topping)
+        
+        # 그래프 제목 추가
+        painter.setFont(QFont('Arial', 14, QFont.Bold))
+        painter.drawText(int(width / 2 - 100), margin - 30, '메뉴-토핑별 판매량')
+
+        painter.end()
+
+        # QImage를 QPixmap으로 변환하여 QLabel에 설정
+        pixmap = QPixmap.fromImage(image)
+        self.menuToppingGraph.setPixmap(pixmap)
+
+
+
 
 class RobotManagePage(QDialog, robotClass):
     def __init__(self, storeNode):
