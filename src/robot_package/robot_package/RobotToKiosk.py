@@ -11,14 +11,14 @@ import time
 class RobotToKiosk(LifecycleNode):
     def __init__(self):
         super().__init__('RobotToKiosk')
-        self.srv = self.create_service(IceRobot, 'IceRobot', self.ice_robot_callback)
-        # Initialize the robot arm and related components
+        self.srv = self.create_service(IceRobot, 'IceRobot', self.ice_robot_callback) # icecream node
         self.arm = XArmAPI('192.168.1.184', baud_checkset=False)
         self.robot_main = RobotMain(self.arm)
-        self.srv4 = self.create_service(Trigger, "Greet", self.trigger_callback)
+        self.srv4 = self.create_service(Trigger, "Greet", self.trigger_callback) # person high node
         self.response = Trigger.Response()
-        self.status_publisher = self.create_publisher(Bool, 'robot_to_kiosk_status', 10)
+        self.status_publisher = self.create_publisher(Bool, 'robot_to_kiosk_status', 10) # lifecycle node
 
+# ========================= person ==> high!  ========================= # 
     def trigger_callback(self, request, response):
         self.get_logger().info('Received Trigger request')
         self.handle_shaking_call()
@@ -30,7 +30,15 @@ class RobotToKiosk(LifecycleNode):
     def handle_shaking_call(self):
         self.handle_shaking()
         self.get_logger().info('Handling shaking...')
+        
 
+    def handle_shaking(self):
+        """Handle shaking actions."""
+        self.robot_main.motion_greet()
+        self.get_logger().info('Hello!!!!!!!!!!!!!')
+        
+        
+# ========================= icecream mechanism  ========================= # 
     def ice_robot_callback(self, request, response):
         """Handle service requests."""
         menu = request.menu.lower()
@@ -48,20 +56,80 @@ class RobotToKiosk(LifecycleNode):
         self.get_logger().info('Service success!!')
         return response
 
+    def handle_menu(self, menu, tracking, shaking):
+        """Handle menu-related actions."""
+        actions = {
+            "banana": self.robot_main.run_banana,
+            "choco": self.robot_main.run_choco,
+            "berry": self.robot_main.run_strawberry,
+            "affogato": self.robot_main.apocato,
+            "아포가토": self.robot_main.apogato_bluetooth
+        }
+        
+        if menu in actions:
+            actions[menu]()
+            time.sleep(1)
+            
+            if menu == "banana":
+                if tracking == "serving":
+                    self.robot_main.tracking_a_banana()
+                    time.sleep(1)
+                    self.handle_tracking()
+                    time.sleep(1)
+                    self.robot_main.speak("아이스크림을 가져가 주세요")
+                elif shaking == "hello":
+                    self.handle_shaking()
+            
+            elif menu == "choco":
+                if tracking == "serving":
+                    self.robot_main.tracking_b_choco()
+                    time.sleep(1)
+                    self.handle_tracking()
+                    time.sleep(1)
+                    self.robot_main.speak("아이스크림을 가져가 주세요")
+                elif shaking == "hello":
+                    self.handle_shaking()
+
+            elif menu == "berry":
+                if tracking == "serving":
+                    self.robot_main.tracking_c_strawberry()
+                    time.sleep(1)
+                    self.handle_tracking()
+                    time.sleep(1)
+                    self.robot_main.speak("아이스크림을 가져가 주세요")
+                    
+                elif shaking == "hello":
+                    self.handle_shaking()
+            
+            self.get_logger().info(f'{menu}!!!!!!!!!!!!!')
+
+
     def handle_tracking(self):
         """Handle tracking actions."""
         self.robot_main.run_robot_arm_tracking()
         self.get_logger().info('Tracking!!!!!!!!!!!!!')
 
-    def handle_shaking(self):
-        """Handle shaking actions."""
-        self.robot_main.motion_greet()
-        self.get_logger().info('Hello!!!!!!!!!!!!!')
 
     def handle_half(self):
         """Handle half requests."""
         self.robot_main.final_run_half()
         self.get_logger().info('Half icecream!!!!!!!!!!!!!')
+
+# ========================= lifecycle node ========================= # 
+# manual (terminal)
+# setting
+# 1. ros2 run robot_package RobotToKiosk
+# 2. ros2 lifecycle set /RobotToKiosk configure
+
+# active
+# ros2 lifecycle set /RobotToKiosk activate
+
+# deactive
+# ros2 lifecycle set /RobotToKiosk deactivate
+
+
+# shutdown
+# ros2 lifecycle set /RobotToKiosk shutdown
 
     def publish_status(self):
         """Publish the node's status."""
@@ -91,53 +159,6 @@ class RobotToKiosk(LifecycleNode):
         if hasattr(self, 'timer'):
             self.timer.cancel()
         return State.TRANSITION_CALLBACK
-
-    def handle_menu(self, menu, tracking, shaking):
-        """Handle menu-related actions."""
-        actions = {
-            "banana": self.robot_main.run_banana,
-            "choco": self.robot_main.run_choco,
-            "berry": self.robot_main.run_strawberry,
-            "affogato": self.robot_main.apocato,
-            "아포가토": self.robot_main.apogato_bluetooth
-        }
-        
-        if menu in actions:
-            actions[menu]()
-            time.sleep(1)
-            
-            if menu == "banana":
-                if tracking == "serving":
-                    self.robot_main.tracking_a_banana()
-                    time.sleep(1)
-                    self.robot_main.run_robot_arm_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                elif shaking == "hello":
-                    self.handle_shaking()
-            
-            elif menu == "choco":
-                if tracking == "serving":
-                    self.robot_main.tracking_b_choco()
-                    time.sleep(1)
-                    self.robot_main.run_robot_arm_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                elif shaking == "hello":
-                    self.handle_shaking()
-
-            elif menu == "berry":
-                if tracking == "serving":
-                    self.robot_main.tracking_c_strawberry()
-                    time.sleep(1)
-                    self.robot_main.run_robot_arm_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                    
-                elif shaking == "hello":
-                    self.handle_shaking()
-            
-            self.get_logger().info(f'{menu}!!!!!!!!!!!!!')
 
 def main(args=None):
     rclpy.init(args=args)

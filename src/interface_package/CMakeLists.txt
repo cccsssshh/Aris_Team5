@@ -32,6 +32,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RestQuantity.srv"
   "srv/Age.srv"
   "srv/MenuTopping.srv"
+  "srv/Check.srv"
 )
 
 

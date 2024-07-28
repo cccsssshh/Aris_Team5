@@ -24,6 +24,8 @@ setup(
             'RobotToKiosk = robot_package.RobotToKiosk:main',
             'RobotToAdminiPub = robot_package.RobotToAdminiPub:main',
             'RobotToAdminiSub = robot_package.RobotToAdminiSub:main',
+            'trash_server = robot_package.trash_server:main',
+            'trash_client = robot_package.trash_client:main',
         ],
     },
 )
