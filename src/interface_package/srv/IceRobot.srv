@@ -1,7 +1,15 @@
+<<<<<<< HEAD
 string menu
 int16 order_num
 string shaking
 string half
 string tracking
+=======
+string[] menu
+int16 topping
+string shaking #hello
+string half #half
+string tracking #serving
+>>>>>>> 2fc0bd6e3befaefb7c8db35311ba7b90f00d5242
 ---
 bool success
