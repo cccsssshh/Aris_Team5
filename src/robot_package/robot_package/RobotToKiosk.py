@@ -1,6 +1,7 @@
+
 import rclpy
-from rclpy.lifecycle import LifecycleNode, State
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, LifecycleState
+from rclpy.lifecycle import TransitionCallbackReturn  # Importing TransitionCallbackReturn from rclpy
 from interface_package.srv import IceRobot
 from robot_package.scripts import RobotMain
 from xarm.wrapper import XArmAPI
@@ -11,53 +12,130 @@ import time
 class RobotToKiosk(LifecycleNode):
     def __init__(self):
         super().__init__('RobotToKiosk')
-        self.srv = self.create_service(IceRobot, 'IceRobot', self.ice_robot_callback) # icecream node
+        self.srv = self.create_service(IceRobot, 'IceRobot', self.ice_robot_callback)
         self.arm = XArmAPI('192.168.1.184', baud_checkset=False)
         self.robot_main = RobotMain(self.arm)
-        self.srv4 = self.create_service(Trigger, "Greet", self.trigger_callback) # person high node
-        self.response = Trigger.Response()
-        self.status_publisher = self.create_publisher(Bool, 'robot_to_kiosk_status', 10) # lifecycle node
+        self.srv4 = self.create_service(Trigger, "Greet", self.trigger_callback)
+        self.status_publisher = self.create_publisher(Bool, 'robot_to_kiosk_status', 10)
+        self.timer = None
 
-# ========================= person ==> high!  ========================= # 
     def trigger_callback(self, request, response):
-        self.get_logger().info('Received Trigger request')
-        self.handle_shaking_call()
-        time.sleep(5)
-        response.success = True
-        response.message = "Trigger handled successfully"
+        try:
+            self.get_logger().info('Received Trigger request')
+            self.handle_shaking_call()
+            time.sleep(5)
+            response.success = True
+            response.message = "Trigger handled successfully"
+        except Exception as e:
+            self.get_logger().error(f'Error in trigger_callback: {e}')
+            response.success = False
+            response.message = str(e)
         return response
 
     def handle_shaking_call(self):
         self.handle_shaking()
         self.get_logger().info('Handling shaking...')
-        
 
-    def handle_shaking(self):
-        """Handle shaking actions."""
-        self.robot_main.motion_greet()
-        self.get_logger().info('Hello!!!!!!!!!!!!!')
-        
-        
-# ========================= icecream mechanism  ========================= # 
     def ice_robot_callback(self, request, response):
-        """Handle service requests."""
-        menu = request.menu.lower()
-        shaking = request.shaking.lower()
-        half = request.half.lower()
-        tracking = request.tracking.lower()
-        self.get_logger().info(f'request : {request}')
-        
-        self.handle_menu(menu, tracking, shaking)
-        
-        if half == "half":
-            self.handle_half()
+        try:
+            menu = request.menu.lower()
+            shaking = request.shaking.lower()
+            half = request.half.lower()
+            tracking = request.tracking.lower()
+            self.get_logger().info(f'Received request: {request}')
 
-        response.success = True
-        self.get_logger().info('Service success!!')
+            self.handle_menu(menu, tracking, shaking)
+
+            if half == "half":
+                self.handle_half()
+
+            response.success = True
+            self.get_logger().info('Service success!!')
+        except Exception as e:
+            self.get_logger().error(f'Error in ice_robot_callback: {e}')
+            response.success = False
         return response
 
+    def handle_tracking(self):
+        self.robot_main.run_robot_arm_tracking()
+        self.get_logger().info('Tracking started')
+
+    def handle_shaking(self):
+        self.robot_main.motion_greet()
+        self.get_logger().info('Shaking initiated')
+
+    def handle_half(self):
+        self.robot_main.final_run_half()
+        self.get_logger().info('Half ice cream process initiated')
+
+# ========================= lifecycle node ========================= # 
+    '''
+    manual (terminal)
+    setting
+    1. ros2 run robot_package RobotToKiosk
+    2. ros2 lifecycle set /RobotToKiosk configure
+
+    active
+    ros2 lifecycle set /RobotToKiosk activate
+
+    deactive
+    ros2 lifecycle set /RobotToKiosk deactivate
+
+
+    shutdown
+    ros2 lifecycle set /RobotToKiosk shutdown
+    '''
+
+    def publish_status(self):
+        msg = Bool()        
+        state = self._state_machine.current_state[1]
+        msg.data = (state == 'active')
+        self.status_publisher.publish(msg)
+        self.get_logger().info(f'Published status: {msg.data}')
+
+    def on_configure(self, state):
+        try:
+            self.get_logger().info('Entering CONFIGURE state.')
+            self.get_logger().info('RobotToKiosk node is now CONFIGURING.')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as e:
+            self.get_logger().error(f'Error during CONFIGURE: {e}')
+            return TransitionCallbackReturn.FAILURE
+
+    def on_activate(self, state):
+        try:
+            self.get_logger().info('Entering ACTIVATE state.')
+            self.get_logger().info('RobotToKiosk node is now ACTIVE.')
+            self.publish_status()
+            self.timer = self.create_timer(1.0, self.publish_status)
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as e:
+            self.get_logger().error(f'Error during ACTIVATE: {e}')
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, state):
+        try:
+            self.get_logger().info('Entering DEACTIVATE state.')
+            self.get_logger().info('RobotToKiosk node is now INACTIVE.')
+            if self.timer:
+                self.timer.cancel()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as e:
+            self.get_logger().error(f'Error during DEACTIVATE: {e}')
+            return TransitionCallbackReturn.FAILURE
+
+    def on_shutdown(self, state):
+        try:
+            self.get_logger().info('Entering SHUTDOWN state.')
+            self.get_logger().info('RobotToKiosk node is shutting down.')
+            if self.timer:
+                self.timer.cancel()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as e:
+            self.get_logger().error(f'Error during SHUTDOWN: {e}')
+            return TransitionCallbackReturn.FAILURE
+
     def handle_menu(self, menu, tracking, shaking):
-        """Handle menu-related actions."""
         actions = {
             "banana": self.robot_main.run_banana,
             "choco": self.robot_main.run_choco,
@@ -101,64 +179,7 @@ class RobotToKiosk(LifecycleNode):
                 elif shaking == "hello":
                     self.handle_shaking()
             
-            self.get_logger().info(f'{menu}!!!!!!!!!!!!!')
-
-
-    def handle_tracking(self):
-        """Handle tracking actions."""
-        self.robot_main.run_robot_arm_tracking()
-        self.get_logger().info('Tracking!!!!!!!!!!!!!')
-
-
-    def handle_half(self):
-        """Handle half requests."""
-        self.robot_main.final_run_half()
-        self.get_logger().info('Half icecream!!!!!!!!!!!!!')
-
-# ========================= lifecycle node ========================= # 
-# manual (terminal)
-# setting
-# 1. ros2 run robot_package RobotToKiosk
-# 2. ros2 lifecycle set /RobotToKiosk configure
-
-# active
-# ros2 lifecycle set /RobotToKiosk activate
-
-# deactive
-# ros2 lifecycle set /RobotToKiosk deactivate
-
-
-# shutdown
-# ros2 lifecycle set /RobotToKiosk shutdown
-
-    def publish_status(self):
-        """Publish the node's status."""
-        msg = Bool()
-        msg.data = self.get_lifecycle_state().id == State.ACTIVE
-        self.status_publisher.publish(msg)
-        self.get_logger().info(f'msg : {msg}')
-
-    def on_configure(self, state):
-        self.get_logger().info('RobotToKiosk node is now CONFIGURING.')
-        return State.TRANSITION_CALLBACK
-
-    def on_activate(self, state):
-        self.get_logger().info('RobotToKiosk node is now ACTIVE.')
-        self.publish_status()
-        self.timer = self.create_timer(1.0, self.publish_status)
-        return State.TRANSITION_CALLBACK
-
-    def on_deactivate(self, state):
-        self.get_logger().info('RobotToKiosk node is now INACTIVE.')
-        if hasattr(self, 'timer'):
-            self.timer.cancel()
-        return State.TRANSITION_CALLBACK
-
-    def on_shutdown(self, state):
-        self.get_logger().info('RobotToKiosk node is shutting down.')
-        if hasattr(self, 'timer'):
-            self.timer.cancel()
-        return State.TRANSITION_CALLBACK
+            self.get_logger().info(f'{menu} processed')
 
 def main(args=None):
     rclpy.init(args=args)
