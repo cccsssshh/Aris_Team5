@@ -817,7 +817,7 @@ class DailySalesPage(QDialog, dailySalesClass):
         painter.drawPolyline(QPolygon(points))
 
         # 각 점에 원 그리기
-        painter.setBrush(Qt.red)
+        painter.setBrush(Qt.green)
         for point in points:
             painter.drawEllipse(point, 5, 5)
 
@@ -868,7 +868,7 @@ class DailySalesPage(QDialog, dailySalesClass):
 
     def drawMenuToppingGridGraph(self, menu_names, topping_names, counts):
         # QLabel의 크기 가져오기
-        size = self.menuSalesGraph.size()
+        size = self.menuToppingGraph.size()
         width, height = size.width(), size.height()
 
         # QImage 생성
@@ -880,11 +880,14 @@ class DailySalesPage(QDialog, dailySalesClass):
         painter.setRenderHint(QPainter.Antialiasing)
 
         # 그래프 영역 정의
-        margin = 80
-        graph_width = width - 2 * margin
-        graph_height = height - 2 * margin
+        left_margin = 80
+        right_margin = 20
+        top_margin = 50
+        bottom_margin = 50
+        graph_width = width - left_margin - right_margin
+        graph_height = height - top_margin - bottom_margin
 
-        # 메뉴와 토핑의 수 (3x3 그리드 가정)
+        # 메뉴와 토핑의 수
         unique_menus = sorted(set(menu_names))
         unique_toppings = sorted(set(topping_names))
         num_menus = len(unique_menus)
@@ -930,10 +933,10 @@ class DailySalesPage(QDialog, dailySalesClass):
         # 그리드 그리기
         for i, menu in enumerate(unique_menus):
             for j, topping in enumerate(unique_toppings):
-                count = counts_dict.get((menu, topping), 0)  # 메뉴와 토핑의 판매량
+                count = counts_dict.get((menu, topping), 0)
 
-                x = margin + i * cell_width
-                y = margin + j * cell_height
+                x = left_margin + i * cell_width
+                y = top_margin + j * cell_height
                 cell_rect = QRect(int(x), int(y), int(cell_width), int(cell_height))
 
                 # 셀 배경색
@@ -942,30 +945,34 @@ class DailySalesPage(QDialog, dailySalesClass):
                 painter.drawRect(cell_rect)
 
                 # 셀 테두리 색상
-                painter.setPen(QPen(QColor('#000000'), 2))  # 검은색 테두리, 2픽셀 두께
+                painter.setPen(QPen(QColor('#000000'), 1))  # 테두리 두께를 1로 줄임
                 painter.drawRect(cell_rect)
 
                 # 텍스트 추가
                 painter.setPen(Qt.black)
-                painter.setFont(QFont('Arial', 10))
+                font = QFont('Arial', int(min(cell_width, cell_height) / 10))  # 동적 폰트 크기
+                painter.setFont(font)
                 text = f"{count}" if count > 0 else ""
                 painter.drawText(cell_rect, Qt.AlignCenter, text)
 
         # X축 제목 추가 (메뉴)
-        painter.setFont(QFont('Arial', 12))
+        painter.setFont(QFont('Arial', 10))  # 폰트 크기 줄임
         for i, menu in enumerate(unique_menus):
-            x = margin + (i + 0.5) * cell_width
-            painter.drawText(int(x), height - margin + 20, menu)
-        
+            x = left_margin + (i + 0.5) * cell_width
+            painter.save()
+            painter.translate(x, height - bottom_margin + 20)
+            painter.drawText(0, 0, menu)
+            painter.restore()
+
         # Y축 제목 추가 (토핑)
-        painter.setFont(QFont('Arial', 12))
+        painter.setFont(QFont('Arial', 10))  # 폰트 크기 줄임
         for j, topping in enumerate(unique_toppings):
-            y = margin + (j + 0.5) * cell_height
-            painter.drawText(margin - 60, int(y), topping)
-        
+            y = top_margin + (j + 0.5) * cell_height
+            painter.drawText(left_margin - 70, int(y), topping)
+
         # 그래프 제목 추가
-        painter.setFont(QFont('Arial', 14, QFont.Bold))
-        painter.drawText(int(width / 2 - 100), margin - 30, '메뉴-토핑별 판매량')
+        painter.setFont(QFont('Arial', 12, QFont.Bold))  # 폰트 크기 줄임
+        painter.drawText(int(width / 2 - 80), top_margin - 20, '메뉴-토핑별 판매량')
 
         painter.end()
 
@@ -973,7 +980,101 @@ class DailySalesPage(QDialog, dailySalesClass):
         pixmap = QPixmap.fromImage(image)
         self.menuToppingGraph.setPixmap(pixmap)
 
+    def drawAgeBarGraph(self, age_groups, age_group_sales):
+            # QLabel의 크기 가져오기
+            size = self.ageGraph.size()
+            width, height = size.width(), size.height()
 
+            # QImage 생성
+            image = QImage(width, height, QImage.Format_ARGB32)
+            image.fill(Qt.white)
+
+            # QPainter로 QImage에 그리기
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            # 그래프 영역 정의
+            margin = 50
+            graph_width = width - 2 * margin
+            graph_height = height - 2 * margin
+
+            # 최대 판매량 구하기
+            max_sales = max(age_group_sales, default=1)
+
+            # Y축 최대값 설정
+            y_max = max(max_sales, 9)
+
+            # 나이대 색상 정의 (파스텔톤 초록색)
+            colors = {
+                '00-09': QColor('#77FF77'),  # 파스텔 초록색
+                '10-19': QColor('#77FF77'),  # 파스텔 초록색
+                '20-29': QColor('#77FF77'),  # 파스텔 초록색
+                '30-39': QColor('#77FF77'),  # 파스텔 초록색
+                '40-49': QColor('#77FF77'),  # 파스텔 초록색
+                '50-59': QColor('#77FF77'),  # 파스텔 초록색
+                '60+': QColor('#77FF77')  # 파스텔 초록색
+            }
+
+            # 막대 그리기
+            bar_width = graph_width / len(age_groups)
+            for i, (age_group, sales) in enumerate(zip(age_groups, age_group_sales)):
+                x = margin + int(i * bar_width)
+                y = height - margin - int(sales / y_max * graph_height)
+                painter.setBrush(colors.get(age_group, QColor('#A9A9A9')))  # 기본 회색
+                painter.drawRect(int(x), int(y), int(bar_width * 0.8), int(height - margin - y))
+
+                # 막대 위에 텍스트 추가
+                painter.setPen(Qt.black)
+                painter.setFont(QFont('Arial', 10))
+                painter.drawText(int(x + bar_width * 0.4), int(y - 10), str(sales))
+
+                # 나이대 라벨 추가
+                painter.setFont(QFont('Arial', 10, QFont.Bold))
+                painter.drawText(int(x + bar_width * 0.4) - 10, int(height - margin + 20), age_group)
+
+            # 축 그리기
+            pen = QPen(Qt.black, 2)
+            painter.setPen(pen)
+            painter.drawLine(margin, height - margin, width - margin, height - margin)  # X 축
+            painter.drawLine(margin, margin, margin, height - margin)  # Y 축
+
+            # Y축에 표시선과 레이블 추가
+            if y_max <= 9:
+                # 9 이하일 경우 1씩 증가
+                num_y_ticks = y_max
+                y_tick_distance = graph_height / num_y_ticks
+                for i in range(num_y_ticks + 1):
+                    y = height - margin - int(i * y_tick_distance)
+                    sales_value = i
+                    painter.drawLine(margin - 5, y, margin, y)
+                    painter.drawText(margin - 40, y + 5, f"{sales_value}")
+            else:
+                # 그 이상일 경우 유동적으로 설정
+                num_y_ticks = 5
+                y_tick_distance = graph_height / num_y_ticks
+                for i in range(num_y_ticks + 1):
+                    y = height - margin - int(i * y_tick_distance)
+                    sales_value = int(y_max * (i / num_y_ticks))
+                    painter.drawLine(margin - 5, y, margin, y)
+                    painter.drawText(margin - 40, y + 5, f"{sales_value}")
+
+            # X축 제목 추가
+            painter.setFont(QFont('Arial', 12))
+            painter.drawText(width // 2, height - margin + 40, '나이대')
+
+            # Y축 제목 추가
+            painter.setFont(QFont('Arial', 12))
+            painter.drawText(margin - 40, margin - 10, '판매량 (개)')
+
+            # 그래프 제목 그리기
+            painter.setFont(QFont('Arial', 14, QFont.Bold))
+            painter.drawText(int(width / 2 - 75), margin - 25, '나이대별 판매량')
+
+            painter.end()
+
+            # QImage를 QPixmap으로 변환하여 QLabel에 설정
+            pixmap = QPixmap.fromImage(image)
+            self.ageGraph.setPixmap(pixmap)
 
 
 class RobotManagePage(QDialog, robotClass):

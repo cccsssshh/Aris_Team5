@@ -11,7 +11,7 @@ class DataBaseNode(Node):
     def __init__(self):
         super().__init__('database_node')
         self.initDataBase()
-        self.initService()
+        self.initServices()
 
     def initDataBase(self):
         self.dbManager = DatabaseManager(
@@ -22,7 +22,7 @@ class DataBaseNode(Node):
             )
         self.dbManager.connect()
 
-    def initService(self):
+    def initServices(self):
         self.dailyTotalSalesService = self.create_service(DailyTotalSales, "dailyTotalSales", self.dailyTotalSalesCallback)
         self.monthTotalSalesService = self.create_service(MonthTotalSales, "monthTotalSales", self.monthTotalSalesCallback)
         self.stocksService = self.create_service(Stocks, "stocks", self.stocksCallback)
@@ -250,6 +250,9 @@ class DataBaseNode(Node):
         
         toppingStockData = [(topping, new_topping_stock)]
         self.dbManager.updateToppingStock(toppingStockData)
+
+        #재고 UI업데이트
+
         return response
     
     def menuToppingCallback(self, request, response):
