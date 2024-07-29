@@ -53,7 +53,7 @@ class RobotMain(object):
         self.state = 'stopped'
         self.start = 0
         self.audio_file = 'refresh.mp3'
-        self.game_file = 'Super Mario Bross - Theme Song.mp3'
+        self.game_file = 'MPMP.mp3'
         self.current_state = np.array([269.4, -20.1, 20.4, 176.9, 53.4, -1.1])
         self.dh_params = [ [0, 243.3, 0, -90],
                            [-90, 0, 200, 180],
@@ -67,6 +67,8 @@ class RobotMain(object):
         self.process_interval = 0.75  # 1초 간격으로 좌표 처리
         self.cleanup_interval = 3 # per 3 sec
         self.stop_event = threading.Event()
+        self.cleanup_timer = None
+        self.cleanup_timer_exit = None
         
         self.position_home = [179.2, -42.1, 7.4, 186.7, 41.5, -1.6] #angle
         self.position_jig_A_grab = [-257.3, -138.3, 198, 68.3, 86.1, -47.0] #linear
@@ -90,7 +92,7 @@ class RobotMain(object):
         self.this_action = '?' # 현재 동작
         self.actions = ['banana', 'choco', 'strawberry'] # 가능한 동작 리스트
         self.seq_length = 30 # 시퀀스 길이
-        self.model = load_model('src/robot_package/recog_model/model2_1.0.keras') # 동작 인식 모델
+        self.model = load_model('/home/lee/Desktop/Aris_Team5_build_test/src/robot_package/recog_model/model2_1.0.keras') # 동작 인식 모델
         self.seq = [] # 관절 데이터 시퀀스
         self.action_seq = [] # 동작 시퀀스
 
@@ -98,12 +100,30 @@ class RobotMain(object):
         self.mp_drawing = mp.solutions.drawing_utils # 미디어파이프 그리기 도구
         self.hands = self.mp_hands.Hands(
             max_num_hands=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_detection_confidence=0.3,
+            min_tracking_confidence=0.3
         )
         self.cap = cv2.VideoCapture(0) # 웹캠에서 비디오 캡처 시작
         pygame.mixer.init()
+        # pygame.init()
         self.cleanup_timer_exit = None
+        
+        self.roi_defined = True
+        self.hand_tracked = False
+        self.roi_start = (160,180)
+        self.roi_end = (480,400)
+        
+        points_dst = [(261, 285), (199, 291), (203, 357), (277, 355)]
+        points_src = [(315, 191), (262, 193), (264, 239), (314, 235)]
+        self.points_src = np.array(points_src, dtype=np.float32)
+        self.points_dst = np.array(points_dst, dtype=np.float32)
+        self.H, _ = cv2.findHomography(self.points_dst, self.points_src)
+        
+        self.solutions_trash = []
+        self.img_width = 640
+        self.img_height = 480
+        self.exit_flag = False
+        
     # =============================== init, error state ========================================= #
     def _robot_init(self):
         self._arm.clean_warn()
@@ -114,11 +134,7 @@ class RobotMain(object):
         time.sleep(1)
         self._arm.register_error_warn_changed_callback(self._error_warn_changed_callback)
         self._arm.register_state_changed_callback(self._state_changed_callback)
-        
-        # self._arm.motion_enable(enable=True)
-        # self._arm.set_gravity_direction([0, 0, 9.8])
-        # self._arm.reset(wait=True)
-        
+    
         
         
         if hasattr(self._arm, 'register_count_changed_callback'):
@@ -181,10 +197,6 @@ class RobotMain(object):
     @property
     def is_alive(self):
         if self.alive and self._arm.connected and self._arm.error_code == 0:
-            # print("True --------")
-            # print(self.alive)
-            # print(self._arm.connected)
-            # print(self._arm.error_code)
             if self._arm.state == 5:
                 cnt = 0
                 while self._arm.state == 5 and cnt < 5:
@@ -192,10 +204,6 @@ class RobotMain(object):
                     time.sleep(0.1)
             return self._arm.state < 4 # 만약 상태 값이 4보다 작다면 True, 그렇지 않으면 False를 반환. 즉 , self._arm.state이 0,1,2,3 일때만 true로 작동 가능한 상태
         else:
-            # print("False --------")
-            # print(self.alive)
-            # print(self._arm.connected)
-            # print(self._arm.error_code)
             return False
 
     # ===============================  fail sealing =============================== #
@@ -215,7 +223,7 @@ class RobotMain(object):
         self.BUFSIZE = 1024
         self.ADDR = (self.HOST, self.PORT)
 
-        # self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
             self.clientSocket.shutdown(1)
             self.clientSocket.close()
@@ -223,9 +231,9 @@ class RobotMain(object):
             pass
 
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # self
+
         self.serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # self.serverSocket.allow_reuse_address = True
+
         while True:
             try:
                 self.serverSocket.bind(self.ADDR)
@@ -244,7 +252,7 @@ class RobotMain(object):
                             except:
                                 time.sleep(1)
                                 print('except')
-                                # break
+
 
                         break
 
@@ -256,15 +264,15 @@ class RobotMain(object):
                 break
             except:
                 pass
-        # self.clientSocket.settimeout(10.0)
+
         print("accept")
         print("--client info--")
-        # print(self.clientSocket)
+
 
         self.connected = True
         self.state = 'ready'
 
-        # ------------------- receive msg start -----------
+
         while self.connected:
             print('loop start')
             time.sleep(0.5)
@@ -272,21 +280,16 @@ class RobotMain(object):
                 print('waiting')
                 self.clientSocket.settimeout(10.0)
                 self.recv_msg = self.clientSocket.recv(1024).decode('utf-8')
-                # try:
-                #    self.recv_msg = self.clientSocket.recv(1024).decode('utf-8')
-                # except Exception as e:
-                #    self.pprint('MainException: {}'.format(e))
+  
                 print('\n' + self.recv_msg)
                 if self.recv_msg == '':
                     print('here')
-                    # continue
-                    # pass
-                    # break
+
                     raise Exception('empty msg')
                 self.recv_msg = self.recv_msg.split('/')
 
                 if self.recv_msg[0] == 'app_ping':
-                    # print('app_ping received')
+  
                     send_msg = 'robot_ping'
                     now_temp = arm.temperatures
                     now_cur = arm.currents
@@ -319,7 +322,7 @@ class RobotMain(object):
                     except Exception as e:
                         self.pprint('MainException: {}'.format(e))
                         print('ping send fail')
-                    # send_msg = arm.temperatures
+
                     if self.state == 'ready':
                         print('STATE : ready for new msg')
                     else:
@@ -340,7 +343,7 @@ class RobotMain(object):
                         self.is_alive = False
                         print('program exit')
 
-                    # 픽업존 아이스크림 뺐는지 여부 확인
+
                     elif self.recv_msg[0].find('icecream_go') >= 0 or self.recv_msg[0].find(
                             'icecream_stop') >= 0 and self.state == 'icecreaming':
                         print(self.recv_msg[0])
@@ -350,7 +353,7 @@ class RobotMain(object):
                             self.order_msg['makeReq']['latency'] = 'stop'
                             print('000000000000000000000000000000')
 
-                    # 실링 존재 여부 확인
+
 
                     if self.recv_msg[0].find('sealing_pass') >= 0 and self.state == 'icecreaming':
                         self.order_msg['makeReq']['sealing'] = 'go'
@@ -360,7 +363,7 @@ class RobotMain(object):
                         print('socket_stop')
 
                     else:
-                        # print('else')
+
                         try:
                             self.order_msg = json.loads(self.recv_msg[0])
                             if self.order_msg['type'] == 'ICECREAM':
@@ -368,8 +371,7 @@ class RobotMain(object):
                                     print('STATE : icecreaming')
                                     print(f'Order message : {self.order_msg}')
                                     self.state = 'icecreaming'
-                            # else:
-                            #    self.clientSocket.send('ERROR : already moving'.encode('utf-8'))
+
                             else:
                                 self.clientSocket.send('ERROR : wrong msg received'.encode('utf-8'))
                         except:
@@ -378,9 +380,7 @@ class RobotMain(object):
 
             except Exception as e:
                 self.pprint('MainException: {}'.format(e))
-                # if e == 'empty msg' :
-                #    pass
-                # self.connected = False
+
                 print('connection lost')
                 while True:
                     time.sleep(2)
@@ -417,7 +417,7 @@ class RobotMain(object):
                     except Exception as e:
                         self.pprint('MainException: {}'.format(e))
                         print('except')
-                        # pass
+
 
 # ========================================================================   motion  part  ============================================================================== # 
 
@@ -444,17 +444,11 @@ class RobotMain(object):
         self._angle_acc = 200
         
         try:
-            # self.clientSocket.send('motion_home_start'.encode('utf-8'))
             print('motion_home : try ')
         except:
             print('motion_home : except')
         print('motion_home start')
-        
-        # designed home
-        # code = self._arm.set_servo_angle(angle=[179.0, -17.9, 17.7, 176.4, 61.3, 5.4], speed=self._angle_speed,
-        #                                  mvacc=self._angle_acc, wait=True, radius=10.0)
-        # if not self._check_code(code, 'set_servo_angle'):
-        #     return
+
         
         code = self._arm.set_servo_angle(angle=self.position_home, speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
@@ -462,7 +456,7 @@ class RobotMain(object):
         if not self._check_code(code, 'set_servo_angle'):
             return
         print('motion_home finish')
-        # self.clientSocket.send('motion_home_finish'.encode('utf-8'))
+
         
 
     # =============== grab a capsule =============== # V
@@ -485,17 +479,6 @@ class RobotMain(object):
         self._tcp_speed = 100
         self._tcp_acc = 1000
 
-        '''
-        code = self._arm.close_lite6_gripper()
-        if not self._check_code(code, 'close_lite6_gripper'):
-            return
-        time.sleep(1)
-        
-        code = self._arm.open_lite6_gripper()
-        if not self._check_code(code, 'open_lite6_gripper'):
-            return
-        time.sleep(1)
-        '''
         code = self._arm.stop_lite6_gripper()
         print('motion_grab_capsule : _arm.stop_lite6_gripper 1 => ok ')
         if not self._check_code(code, 'stop_lite6_gripper'):
@@ -503,21 +486,11 @@ class RobotMain(object):
         time.sleep(0.5)
 
         try:
-            # self.clientSocket.send('motion_grab_capsule_start'.encode('utf-8'))
             print('motion_grab_capsule : sending............ ')
         except:
             print('motion_grab_capsule : error')
 
-        # code = self._arm.set_servo_angle(angle=[175.4, 28.7, 23.8, 84.5, 94.7, -5.6], speed=self._angle_speed,
-        #                                 mvacc=self._angle_acc, wait=True, radius=0.0)
-        # if not self._check_code(code, 'set_servo_angle'):
-        #    return
-        
         if self.order_msg['makeReq']['jigNum'] in ['A']:
-            # code = self._arm.set_servo_angle(angle=[166.1, 30.2, 25.3, 75.3, 93.9, -5.4], speed=self._angle_speed,
-            #                                  mvacc=self._angle_acc, wait=True, radius=0.0)
-            # if not self._check_code(code, 'set_servo_angle'):
-            #     return
             pass
             print('A WHAT???')
         else:
@@ -527,12 +500,6 @@ class RobotMain(object):
             print('Hmm.............. A?..')
             if not self._check_code(code, 'set_servo_angle'):
                 return
-            # code = self._arm.set_servo_angle(angle=[166.1, 30.2, 25.3, 75.3, 93.9, -5.4], speed=self._angle_speed,
-            #                                  mvacc=self._angle_acc, wait=False, radius=20.0)
-            # if not self._check_code(code, 'set_servo_angle'):
-            #     return
-
-
         code = self._arm.open_lite6_gripper()
         print('_arm.stop_lite6_gripper 2 : ok ')
         if not self._check_code(code, 'open_lite6_gripper'):
@@ -545,10 +512,7 @@ class RobotMain(object):
             print("move to A!!!!!!!!!!!!!!!!")
             if not self._check_code(code, 'set_servo_angle'):
                 return
-            # code = self._arm.set_position(*[-255.4, -139.3, 193.5, -12.7, 87.2, -126.1], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
 
             code = self._arm.set_position(*self.position_jig_A_grab, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
@@ -570,9 +534,7 @@ class RobotMain(object):
             print("move to C !!!!!!!!!!!!!!!!")
             if not self._check_code(code, 'set_servo_angle'):
                 return
-            # code = self._arm.set_position(*[-76.6, -144.6, 194.3, 5.7, 88.9, -50.1], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*self.position_jig_C_grab, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             print("move to C JIG !!!!!!!!!!!!!!!!")
@@ -631,7 +593,7 @@ class RobotMain(object):
         print('sealing check')
         self._angle_speed = 200
         self._angle_acc = 200
-        # self.clientSocket.send('motion_sheck_sealing'.encode('utf-8'))
+
         code = self._arm.set_position(*self.position_sealing_check, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
         if not self._check_code(code, 'set_position'):
@@ -639,12 +601,6 @@ class RobotMain(object):
     
     # =============== grab a capsule => fail  =============== # V
     def motion_place_fail_capsule(self):
-
-        # code = self._arm.set_servo_angle(angle=[154.2, -3.3, 13.7, 101.2, 83.4, 130.4], speed=self._angle_speed,
-        #                                 mvacc=self._angle_acc, wait=True, radius=0.0)
-        # if not self._check_code(code, 'set_servo_angle'):
-        #    return
-
 
         if self.order_msg['makeReq']['jigNum'] == 'A':
             code = self._arm.set_servo_angle(angle=[177.3, 5.5, 12.9, 133.6, 81.3, 183.5], speed=self._angle_speed,
@@ -755,24 +711,11 @@ class RobotMain(object):
                                                 mvacc=self._angle_acc, wait=False, radius=30.0)
             if not self._check_code(code, 'set_servo_angle'):
                 return
-            # code = self._arm.set_position(*[193.8, -100.2, 146.6, 135.9, -86.0, -55.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
             code = self._arm.set_position(*[195.0, -96.5, 200.8, -168.0, -87.1, -110.5], speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=10.0, wait=False)
             if not self._check_code(code, 'set_position'):
                 return
-            # code = self._arm.set_position(*[195.0, -96.5, 145.8, -168.0, -87.1, -110.5], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
-            # code = self._arm.set_position(*[195.5, -96.6, 145.6, 179.0, -87.0, -97.1], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
-            # code = self._arm.set_position(*[214.0, -100.2, 145.0, -25.6, -88.5, 95.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*self.position_cup_grab, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
@@ -854,10 +797,7 @@ class RobotMain(object):
                                                     mvacc=self._angle_acc, wait=False, radius=20.0)
                 if not self._check_code(code, 'set_servo_angle'):
                     return
-                # code = self._arm.set_servo_angle(angle=[87.5, -48.2, 13.5, 125.1, 44.5, 46.2], speed=self._angle_speed,
-                #                                 mvacc=self._angle_acc, wait=True, radius=0.0)
-                # if not self._check_code(code, 'set_servo_angle'):
-                #    return
+
                 code = self._arm.set_servo_angle(angle=self.position_topping_B, speed=self._angle_speed,
                                                     mvacc=self._angle_acc, wait=True, radius=0.0)
                 if not self._check_code(code, 'set_servo_angle'):
@@ -926,19 +866,13 @@ class RobotMain(object):
                                                 mvacc=self._tcp_acc, radius=10.0, wait=False)
                 if not self._check_code(code, 'set_position'):
                     return
-            # code = self._arm.set_position(*[165.1, 162.9, 362.5, -31.7, 86.6, 9.5], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*self.position_icecream_with_topping, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
                 return
         else:
-            # code = self._arm.set_servo_angle(angle=[45.8, -17.9, 33.5, 186.9, 41.8, -7.2], speed=self._angle_speed,
-            #                                 mvacc=self._angle_acc, wait=True, radius=0.0)
-            # if not self._check_code(code, 'set_servo_angle'):
-            #    return
+
             code = self._arm.set_cgpio_digital(3, 1, delay_sec=0)
             if not self._check_code(code, 'set_cgpio_digital'):
                 return
@@ -1022,14 +956,7 @@ class RobotMain(object):
         self._tcp_acc = 1000
 
         if self.order_msg['makeReq']['jigNum'] == 'A':
-            # code = self._arm.set_position(*[-251.2, -142.1, 213.7, -28.1, 88.8, -146.0], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
-            # code = self._arm.set_position(*[-250.3, -138.3, 213.7, 68.3, 86.1, -47.0], speed=self._tcp_speed,
-            #                              mvacc=self._tcp_acc, radius=0.0, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*self.position_jig_A_serve, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
@@ -1055,9 +982,7 @@ class RobotMain(object):
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
                 return
-            # code = self._arm.set_tool_position(*[0.0, 0.0, -30, 0.0, 0.0, 0.0], speed=self._tcp_speed, mvacc=self._tcp_acc, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*[-189.7, -26.0, 193.3, -28.1, 88.8, -146.0], speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
@@ -1089,18 +1014,13 @@ class RobotMain(object):
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
                 return
-            # code = self._arm.set_tool_position(*[0.0, 0.0, -30, 0.0, 0.0, 0.0], speed=self._tcp_speed, mvacc=self._tcp_acc, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*[-168.5, -33.2, 192.8, -92.9, 86.8, -179.3], speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
                 return
         elif self.order_msg['makeReq']['jigNum'] == 'C':
-            # code = self._arm.set_servo_angle(angle=[171.0, 13.7, 13.5, 73.9, 92.3, -2.9], speed=self._angle_speed,
-            #                                 mvacc=self._angle_acc, wait=True, radius=0.0)
-            # if not self._check_code(code, 'set_servo_angle'):
-            #    return
+
             code = self._arm.set_servo_angle(angle=[177.6, 0.2, 13.5, 70.0, 94.9, 13.8], speed=self._angle_speed,
                                                 mvacc=self._angle_acc, wait=True, radius=0.0)
             if not self._check_code(code, 'set_servo_angle'):
@@ -1129,9 +1049,7 @@ class RobotMain(object):
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
                 return
-            # code = self._arm.set_tool_position(*[0.0, 0.0, -30, 0.0, 0.0, 0.0], speed=self._tcp_speed, mvacc=self._tcp_acc, wait=True)
-            # if not self._check_code(code, 'set_position'):
-            #    return
+
             code = self._arm.set_position(*[-98.1, -52.1, 191.4, -68.4, 86.4, -135.0], speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             if not self._check_code(code, 'set_position'):
@@ -1262,7 +1180,7 @@ class RobotMain(object):
         time.sleep(0.5)
 
     # =============== dance_a =============== #
-    # designed 'poke'
+
     def motion_dance_a(self):
         try:
             self.clientSocket.send('dance_a_start'.encode('utf-8'))
@@ -1311,7 +1229,7 @@ class RobotMain(object):
             return
 
     # =============== dance_b =============== #
-    # designed 'shake'
+
     def motion_dance_b(self):
         try:
             self.clientSocket.send('dance_b_start'.encode('utf-8'))
@@ -1341,7 +1259,7 @@ class RobotMain(object):
             return
 
     # =============== dance_c =============== #
-    # designed '빙글빙글'
+
     def motion_dance_c(self):  
         try:
             self.clientSocket.send('dance_c_start'.encode('utf-8'))
@@ -1385,7 +1303,7 @@ class RobotMain(object):
                 print('socket error')
 
     # =============== dance_come_on =============== #
-    # designed '컴온컴온
+
     def motion_come_on(self):
         try:
             self.clientSocket.send('comeon_start'.encode('utf-8'))
@@ -1490,10 +1408,7 @@ class RobotMain(object):
 
     # =============== motion_greeting => HI! =============== #
     def motion_greet(self):
-        try:
-            self.clientSocket.send('greet_start'.encode('utf-8'))
-        except:
-            print('socket error')
+
 
         self._angle_speed = 100
         self._angle_acc = 350
@@ -1502,44 +1417,44 @@ class RobotMain(object):
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 180.9, -28.3, -92.8], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 185.4, 30.8, -94.9], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 180.9, -28.3, -92.8], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 185.4, 30.8, -94.9], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 180.9, -28.3, -92.8], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
+        time.sleep(1)
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 185.4, 30.8, -94.9], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
-        try:
-            self.clientSocket.send('motion_greet finish'.encode('utf-8'))
-        except:
-            print('socket error')
+        time.sleep(1)
+
         code = self._arm.set_servo_angle(angle=[178.9, -0.7, 179.9, 181.5, -1.9, -92.6], speed=self._angle_speed,
                                             mvacc=self._angle_acc, wait=True, radius=0.0)
         if not self._check_code(code, 'set_servo_angle'):
             return
-        while True:
-            try:
-                self.clientSocket.send('motion_greet_finish'.encode('utf-8'))
-                break
-            except:
-                print('socket error')
+        time.sleep(1)
+
 
     # =============== motion_breath  =============== #
     def motion_breath(self):
@@ -1702,7 +1617,7 @@ class RobotMain(object):
         self._tcp_speed = 100
         self._tcp_acc = 1000
 
-        code = self._arm.close_lite6_gripper()
+        code = self._arm.open_lite6_gripper()
         if not self._check_code(code, 'close_lite6_gripper'):
             return
         time.sleep(1)
@@ -1746,6 +1661,14 @@ class RobotMain(object):
                 return
 
 
+        # 공통 그리퍼 동작
+        code = self._arm.close_lite6_gripper()
+        print('_arm.stop_lite6_gripper 3 : ok ')
+        if not self._check_code(code, 'close_lite6_gripper'):
+            return
+        time.sleep(1)
+
+
         self._angle_speed = 180
         self._angle_acc = 500
 
@@ -1783,7 +1706,7 @@ class RobotMain(object):
         self._tcp_speed = 100
         self._tcp_acc = 1000
 
-        code = self._arm.close_lite6_gripper()
+        code = self._arm.open_lite6_gripper()
         if not self._check_code(code, 'close_lite6_gripper'):
             return
         time.sleep(1)
@@ -1848,7 +1771,7 @@ class RobotMain(object):
         self._tcp_speed = 100
         self._tcp_acc = 1000
         
-        code = self._arm.close_lite6_gripper()
+        code = self._arm.open_lite6_gripper()
         if not self._check_code(code, 'close_lite6_gripper'):
             return
         time.sleep(1)
@@ -2022,7 +1945,7 @@ class RobotMain(object):
         self._tcp_speed = 100
         self._tcp_acc = 1000
 
-        code = self._arm.close_lite6_gripper()
+        code = self._arm.open_lite6_gripper()
         if not self._check_code(code, 'close_lite6_gripper'):
             return
         time.sleep(1)
@@ -2033,9 +1956,13 @@ class RobotMain(object):
             return
         time.sleep(0.5)
 
+        code = self._arm.set_servo_angle(angle=[176, 31.7, 31, 76.7, 91.2, -1.9], speed=self._angle_speed,
+                                                    mvacc=self._angle_acc, wait=True, radius=0.0)
+        if not self._check_code(code, 'set_servo_angle'):
+            return
+
 
         if order_msg_B == 'B':
-
             code = self._arm.set_position(*self.position_jig_B_grab, speed=self._tcp_speed,
                                             mvacc=self._tcp_acc, radius=0.0, wait=True)
             print("move to B JIG !!!!!!!!!!!!!!!!")
@@ -2858,12 +2785,11 @@ class RobotMain(object):
         
         
     def play_audio_game(self, game_file):
+        pygame.mixer.init()
         pygame.mixer.music.load(game_file)
-        pygame.mixer.music.play(-1)  # 반복 
-        while not self.stop_event.is_set():
-            time.sleep(1)  # 짧은 대기 시간으로 반복 체크
+        pygame.mixer.music.play()
+        pygame.quit()  # pygame 종료
 
-        pygame.mixer.music.stop()
 
     def recognize_speech(self):
         r = sr.Recognizer()
@@ -3521,41 +3447,28 @@ class RobotMain(object):
 
 # ============================== final function tunning : banana, choco, strawberry apogato ============================== #
     def run_banana(self):
-        # -------------- icecream start--------------------
-        a = 1
+        start_a = False
         try:
-            # while self.is_alive:
-            #     count = 0
-            #     while True:
-            #         # if sealing_check request arrives or 5sec past
-            #         if  count >= 1:
-            #             print(f"count : {count}")
-            #             break
-            #         time.sleep(0.2)
-            #         count += 0.2
+            if not start_a:
+                self.speak("바나나 아이스크림 주문 받았습니다.")
+                self.motion_home()
+                self.motion_grab_capsule_a()
+                self.motion_check_sealing()
+                self.motion_place_capsule()
+                self.motion_grab_cup_a()
+                self.motion_topping_a()
+                self.motion_make_icecream_a() 
+                self.motion_serve_a()
+                self.motion_trash_capsule()
+                self.motion_home()
+                print('icecream finish')
+                start_a = True
+                self.speak("주문하신 아이스크림이 완성되었습니다")
                     
-                    
-                    # camera를 통해 capsule이 인식 했을 경우
-                    if a == 1:
-                        self.motion_home()
-                        self.motion_grab_capsule_a()
-                        self.motion_check_sealing()
-                        self.motion_place_capsule()
-                        self.motion_grab_cup_a()
-                        self.motion_topping_a()
-                        self.motion_make_icecream_a() ######## 1/2
-                        self.motion_serve_a()
-                        self.motion_trash_capsule()
-                        self.motion_home()
-                        print('icecream finish')
-                        a = 0
-                    # camera를 통해 capsule이 인식 안됬을 경우
-                    else:
-                        self.motion_place_fail_capsule_a()
-                        self.motion_home()
-                        a = 0
+            else:
+                self.motion_place_fail_capsule_a()
+                self.motion_home()
 
-                   
         except Exception as e:
             self.pprint('MainException: {}'.format(e))
         
@@ -3570,40 +3483,27 @@ class RobotMain(object):
 
     def run_choco(self):
         # -------------- icecream start--------------------
-        b = 1
+        start_b = False
         try:
-            # while self.is_alive:
-            #     count = 0
-            #     while True:
-            #         # if sealing_check request arrives or 5sec past
-            #         if  count >= 5:
-            #             print(count)
-            #             break
-            #         time.sleep(0.2)
-            #         count += 0.2
-                    
-                    
-                    # camera를 통해 capsule이 인식 했을 경우
-                    if b == 1:
-                        self.motion_home()
-                        self.motion_grab_capsule_b()
-                        self.motion_check_sealing()
-                        self.motion_place_capsule()
-                        self.motion_grab_cup_b()
-                        self.motion_topping_b()
-                        self.motion_make_icecream_b()
-                        self.motion_serve_b()
-                        self.motion_trash_capsule()
-                        self.motion_home()
-                        print('icecream finish')
-                        b = 0
-                    # camera를 통해 capsule이 인식 안됬을 경우
-                    else:
-                        self.motion_place_fail_capsule_b()
-                        self.motion_home()
-                        b = 0
+            if not start_b:
+                self.speak("초코 아이스크림 주문 받았습니다.")
+                self.motion_home()
+                self.motion_grab_capsule_b()
+                self.motion_check_sealing()
+                self.motion_place_capsule()
+                self.motion_grab_cup_b()
+                self.motion_topping_b()
+                self.motion_make_icecream_b()
+                self.motion_serve_b()
+                self.motion_trash_capsule()
+                self.motion_home()
+                print('icecream finish')
+                start_b = True
+                self.speak("주문하신 아이스크림이 완성되었습니다")
+            else:
+                self.motion_place_fail_capsule_b()
+                self.motion_home()
 
-                   
         except Exception as e:
             self.pprint('MainException: {}'.format(e))
         
@@ -3617,95 +3517,70 @@ class RobotMain(object):
             self._arm.release_count_changed_callback(self._count_changed_callback)
 
     def run_strawberry(self):
-            # -------------- icecream start--------------------
-            c = 1
-            try:
-                # while self.is_alive:
-                #     count = 0
-                #     while True:
-                #         # if sealing_check request arrives or 5sec past
-                #         if  count >= 5:
-                #             print(count)
-                #             break
-                #         time.sleep(0.2)
-                #         count += 0.2
-                        
-                        
-                        # camera를 통해 capsule이 인식 했을 경우
-                        if c == 1:
-                            self.motion_home()
-                            self.motion_grab_capsule_c()
-                            self.motion_check_sealing()
-                            self.motion_place_capsule()
-                            self.motion_grab_cup_c()
-                            self.motion_topping_c()
-                            self.motion_make_icecream_c()
-                            self.motion_serve_c()
-                            self.motion_trash_capsule()
-                            self.motion_home()
-                            print('icecream finish')
-                            c = 0
-                        # camera를 통해 capsule이 인식 안됬을 경우
-                        else:
-                            self.motion_place_fail_capsule_c()
-                            self.motion_home()
-                            c = 0
-                    
-            except Exception as e:
-                self.pprint('MainException: {}'.format(e))
-            
-            # ==================== error check ==================== #      
-            
-            self.alive = False
-            self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
-            self._arm.release_state_changed_callback(self._state_changed_callback)
-            
-            if hasattr(self._arm, 'release_count_changed_callback'):
-                self._arm.release_count_changed_callback(self._count_changed_callback)
+        # -------------- icecream start--------------------
+        start_c = False
+        try:
+            if not start_c:
+                self.speak("딸기 아이스크림 주문 받았습니다.")
+                self.motion_home()
+                self.motion_grab_capsule_c()
+                self.motion_check_sealing()
+                self.motion_place_capsule()
+                self.motion_grab_cup_c()
+                self.motion_topping_c()
+                self.motion_make_icecream_c()
+                self.motion_serve_c()
+                self.motion_trash_capsule()
+                self.motion_home()
+                print('icecream finish')
+                start_c = True
+                self.speak("주문하신 아이스크림이 완성되었습니다")
+            else:
+                self.motion_place_fail_capsule_c()
+                self.motion_home()
+
+        except Exception as e:
+            self.pprint('MainException: {}'.format(e))
+        
+        # ==================== error check ==================== #      
+        
+        self.alive = False
+        self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
+        self._arm.release_state_changed_callback(self._state_changed_callback)
+        
+        if hasattr(self._arm, 'release_count_changed_callback'):
+            self._arm.release_count_changed_callback(self._count_changed_callback)
 
     def apocato(self):
          # -------------- apocato start--------------------
-        a = 1
+        start_d = False
         try:
-            # while self.is_alive:
-            #     count = 0
-            #     while True:
-            #         # if sealing_check request arrives or 5sec past
-            #         if  count >= 1:
-            #             print(f"count : {count}")
-            #             break
-            #         time.sleep(0.2)
-            #         count += 0.2
-                    
-                    
-                    # camera를 통해 capsule이 인식 했을 경우
-                    if a == 1:
-                        print('icecream start')
-                        self.motion_home()
-                        self.motion_grab_capsule_a()
-                        self.motion_check_sealing()
-                        self.motion_place_capsule()
-                        self.motion_grab_cup_a()
-                        self.motion_topping_a()
-                        self.motion_make_icecream_a()
-                        self.motion_serve_a()
-                        self.motion_trash_capsule()
-                        self.motion_home()
-                        print('icecream finish')
-                        
-                        time.sleep(3)
-                        print('apogato start')
-                        self.apocato_make()
-                        self.motion_home()
-                        print('apogato finish')
-                        a = 0
-                    # camera를 통해 capsule이 인식 안됬을 경우
-                    else:
-                        self.motion_place_fail_capsule_a()
-                        self.motion_home()
-                        a = 0
-
-                   
+            if not start_d:
+                self.speak("아포가토 아이스크림 주문 받았습니다.")
+                print('icecream start')
+                self.motion_home()
+                self.motion_grab_capsule_a()
+                self.motion_check_sealing()
+                self.motion_place_capsule()
+                self.motion_grab_cup_a()
+                self.motion_topping_a()
+                self.motion_make_icecream_a()
+                self.motion_serve_a()
+                self.motion_trash_capsule()
+                self.motion_home()
+                print('icecream finish')
+                
+                time.sleep(3)
+                print('apogato start')
+                self.apocato_make()
+                self.motion_home()
+                print('apogato finish')
+                start_d = True
+                self.speak("주문하신 아이스크림이 완성되었습니다")
+            else:
+                self.motion_place_fail_capsule_a()
+                self.motion_home()
+                
         except Exception as e:
             self.pprint('MainException: {}'.format(e))
         
@@ -3803,8 +3678,7 @@ class RobotMain(object):
                     playsound_thread.join()
                     banana_final_thread.join()
                     time.sleep(2)
-                    self.speak("주문하신 아이스크림이 완성되었습니다")
-                    cv2.destroyAllWindows()
+                    self.speak("주문하신 아이스크림이 완성되었습니다.")
                     break
         
                 if self.this_action == 'choco': # 액션이 'choco'이면
@@ -3821,7 +3695,6 @@ class RobotMain(object):
                     
                     time.sleep(2)
                     self.speak("주문하신 아이스크림이 완성되었습니다")
-                    cv2.destroyAllWindows()
                     break
 
                 if self.this_action == 'strawberry':  # 액션이 'strawberry'이면
@@ -3838,7 +3711,6 @@ class RobotMain(object):
                     
                     time.sleep(2)
                     self.speak("주문하신 아이스크림이 완성되었습니다")
-                    cv2.destroyAllWindows()
                     break
                     
                 self.this_action = '?' # 액션 초기화
@@ -3854,44 +3726,47 @@ class RobotMain(object):
 # ============================== final function2 : speech recognition robot arm control ============================== #
 
     def apogato_bluetooth(self):
-            server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+        cap = cv2.VideoCapture(0)
 
-            port = 1
-            server_sock.bind(("", port))
-            server_sock.listen(1)
+        if not cap.isOpened():
+            print("Error: Could not open camera.")
+            return
+        ret, frame = cap.read()
+        server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
 
-            client_sock, address = server_sock.accept()
-            print("Accepted connection from", address)
+        port = 1
+        server_sock.bind(("", port))
+        server_sock.listen(1)
 
-            try:
-                while True:
-                    data = client_sock.recv(1024)
-                    if not data:
-                        break
-                    print(f"받은 데이터: {data.decode()}")
-                    if data.decode() == "아포가토":
-                        self.speak("아포가토 아이스크림 주문 받았습니다.")
-                        time.sleep(2)
-                        playsound_thread = threading.Thread(target=self.play_audio, args=(self.audio_file,))
-                        apocato_final_thread = threading.Thread(target=self.apocato)
-                        
-                        playsound_thread.start()
-                        apocato_final_thread.start()
-                        
-                        playsound_thread.join()
-                        apocato_final_thread.join()
-                        
-                        self.speak("주문하신 아이스크림이 완성되었습니다")
-                        
-                        
-                        self.apocato()
-                        
-            except OSError:
-                pass
-            
-            print("연결 종료")
-            client_sock.close()
-            server_sock.close()
+        client_sock, address = server_sock.accept()
+        print("Accepted connection from", address)
+
+        try:
+            while True:
+                data = client_sock.recv(1024)
+                if not data:
+                    break
+                print(f"받은 데이터: {data.decode()}")
+                if data.decode() == "아포가토":
+                    self.speak("아포가토 아이스크림 주문 받았습니다.")
+                    time.sleep(2)
+                    playsound_thread = threading.Thread(target=self.play_audio, args=(self.audio_file,))
+                    apocato_final_thread = threading.Thread(target=self.apocato)
+                    
+                    playsound_thread.start()
+                    apocato_final_thread.start()
+                    
+                    playsound_thread.join()
+                    apocato_final_thread.join()
+                    
+                    self.speak("주문하신 아이스크림이 완성되었습니다")
+        except Exception as e:
+            print("에러 발생!!!!!!!!", e)
+            pass
+        
+        print("연결 종료")
+        client_sock.close()
+        server_sock.close()
 
 # ============================== final function3 : making a half taste icecream  ============================== #
 
@@ -3910,7 +3785,7 @@ class RobotMain(object):
         semi_final_thread.join()
         
         self.speak("주문하신 아이스크림이 완성되었습니다")
-        
+
     def semi_final_run_half(self):
         self.run_half_part1()
         self.run_half_part2_1()
@@ -3920,12 +3795,12 @@ class RobotMain(object):
     def run_half_part2_1(self):
         # -------------- icecream start--------------------
         try:
-            if self.start == 1:
+            if self.start == 0:
                 # ####################  second 2_1 icecream #################### 
                 self.motion_home()
                 time.sleep(2)
                 # self.motion_grab_capsule_b()
-                time.sleep(2)
+                # time.sleep(2)
                 self.motion_grab_capsule_b_down()
                 time.sleep(2)
                 self.motion_check_sealing()
@@ -3936,9 +3811,6 @@ class RobotMain(object):
                 time.sleep(2)
                 self.motion_home()
                 time.sleep(2)
-            
-                self.start = 0
-                print(self.start)
             else:
                 self.motion_place_fail_capsule_a()
                 self.motion_home()
@@ -4041,15 +3913,38 @@ class RobotMain(object):
             self.motion_serve_c()
             self.motion_trash_capsule()
             self.motion_home()
-            self.start += 1
-            print(self.start)
+            
             
         except Exception as e:
             self.pprint('MainException: {}'.format(e))
         
 
-# ============================== final function4 : hand robot arm tracking ============================== #
+    # ============================== final function4 : hand robot arm tracking ============================== #
 
+    def run_robot_arm_tracking(self):
+        self.calibration()
+        self.tracking_home()
+        self.speak("손 추적 시스템 작동 시작하겠습니다")
+        audio_thread = threading.Thread(target=self.play_audio_game, args=(self.game_file,))
+        adsd_thread = threading.Thread(target=self.hand_camera)
+        
+        audio_thread.start()
+        adsd_thread.start()
+        
+        # 20초 후에 stop_event를 설정하여 함수를 종료하도록 합니다.
+        timer = threading.Timer(20.0, self.stop_event.set)
+        timer.start()
+        
+        adsd_thread.join() # 손 추적 스레드가 종료될 때까지 기다립니다.
+        
+        self.stop_event.set() # 오디오 스레드를 종료시키기 위해 이벤트를 설정합니다
+        audio_thread.join()
+        
+        # self.adsd()  # 손 추적 시작
+        time.sleep(1)
+        self.speak("손 추적 시스템 종료하겠습니다")
+        
+    
     def dh_transform(self, theta, d, a, alpha):
         theta = np.deg2rad(theta)
         alpha = np.deg2rad(alpha)
@@ -4060,7 +3955,7 @@ class RobotMain(object):
             [0, np.sin(alpha), np.cos(alpha), d],
             [0, 0, 0, 1]
         ])
-        
+
     def forward_kinematics(self, dh_params, thetas):
         T = np.eye(4)
         for i, params in enumerate(dh_params):
@@ -4117,159 +4012,640 @@ class RobotMain(object):
         if not self._check_code(code, 'set_servo_angle'):
             return
         
-    def star(self):
-        cv_file = cv2.FileStorage("calibration_params.xml", cv2.FILE_STORAGE_READ)
+    def calibration(self):
+        cv_file = cv2.FileStorage("calibration_params_final2.xml", cv2.FILE_STORAGE_READ)
         self.camera_matrix = cv_file.getNode("cameraMatrixL").mat()
         self.new_camera_matrix = cv_file.getNode("newCameraMatrixL").mat()
         self.dist_coeffs = cv_file.getNode("distL").mat()
         self.roi = cv_file.getNode("roiL").mat()
         cv_file.release()
-        # print("Camera Matrix:")
-        # print(self.camera_matrix)
-        # print("New Camera Matrix:")
-        # print(self.new_camera_matrix)
-        # print("Distortion Coefficients:")
-        # print(self.dist_coeffs)
-        # print("ROI:")
-        # print(self.roi)
         
-    def pixel_to_world(self, pixel_x, pixel_y, camera_matrix, square_size=15):
-        fx = camera_matrix[0, 0]
-        fy = camera_matrix[1, 1]
-        cx = camera_matrix[0, 2]
-        cy = camera_matrix[1, 2]
-        real_x_mm = (pixel_x - cx) * square_size / fx
-        real_y_mm = (pixel_y - cy) * square_size / fy
-        real_x_cali = 0 + (real_x_mm * 29)
-        real_z_cali = 456.9 +(real_y_mm * -20)
-        # print(f"Pixel coordinates: ({pixel_x}, {pixel_y})")
+    def pixel_to_world(self, pixel_x, pixel_y):
+        real_x_cali_mm = -3.6+ ((pixel_x-356) * 1.7) #변화량
+        real_z_cali_mm = 300 + ((pixel_y-227) *(-1.2))
+        print(f"Pixel coordinates: ({pixel_x}, {pixel_y})")
         # print(f"Real world coordinates: ({real_x_mm:.2f} mm, {real_y_mm:.2f} mm)")
-        # print(f"Real world calibration coordinates: ({real_x_cali:.2f} mm, {real_z_cali:.2f} mm)")
-        return real_x_cali, real_z_cali
+        print(f"Real world calibration coordinates: ({real_x_cali_mm:.2f} mm, {real_z_cali_mm:.2f} mm)")
+        return real_x_cali_mm, real_z_cali_mm
     
-    def adsd(self):
-        self.start_cleanup_timer()
-        # self.cap = cv2.VideoCapture(0)
-        prev_x, prev_y = None, None
-        canvas = None
-        last_time = time.time()
-        initial_hand_position = None
-        tracking_margin = 100
-        self.start_cleanup_timer_exit()
-        with self.mp_hands.Hands(max_num_hands=1) as hands:
-            while self.cap.isOpened():
-                ret, frame = self.cap.read()
-                if not ret:
-                    break
-                frame = cv2.flip(frame, 1)
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = hands.process(frame_rgb)
-                if canvas is None:
-                    canvas = frame.copy() * 0
-                current_time = time.time()
-                if result.multi_hand_landmarks:
-                    for hand_landmarks in result.multi_hand_landmarks:
-                        x = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST].x * frame.shape[1])
-                        y = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST].y * frame.shape[0])
-                        if initial_hand_position is None:
-                            initial_hand_position = (x, y)
-                        if initial_hand_position is not None:
-                            if prev_x is None or prev_y is None:
-                                prev_x, prev_y = x, y
-                            if abs(x - prev_x) < tracking_margin and abs(y - prev_y) < tracking_margin:
-                                if canvas is None:
-                                    canvas = frame.copy()
-                                if current_time - last_time >= 1:
-                                    self.coordinates.append((x, y))
-                                    print(f'adsd Coordinates: ({x, y})')
-                                    last_time = current_time
-                                prev_x, prev_y = x, y
-                                self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
-                # if canvas is not None:
-                frame = cv2.addWeighted(frame, 0.7, canvas, 0.7, 0)
-                cv2.imshow('Hand Tracking', frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    self.cleanup_timer.cancel()
-                    break
-                # 주기적으로 좌표를 처리
-                if current_time - self.last_processed_time > self.process_interval:
-                    self.process_latest_coordinates()
-                    self.last_processed_time = current_time
-        # self.cap.release()
-        # cv2.destroyAllWindows()
-        self.cleanup_and_exit()
-        
+    def hand_camera(self):
+        def run():
+            time.sleep(0.5)
+            self.start_cleanup_timer()
+            prev_x, prev_y = None, None
+            last_time = time.time()
+            tracking_margin = 75
+            self.start_cleanup_timer_exit()
+
+            with self.mp_hands.Hands(max_num_hands=1) as hands:
+                while self.cap.isOpened() and not self.exit_flag:
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        break
+
+                    frame = cv2.flip(frame, 1)
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    result = hands.process(frame_rgb)
+                    current_time = time.time()
+
+                    if self.roi_defined:
+                        cv2.rectangle(frame, self.roi_start, self.roi_end, (0, 255, 0), 2)
+                        cv2.putText(frame, f'Start: {self.roi_start}', (self.roi_start[0], self.roi_start[1] - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+                        cv2.putText(frame, f'End: {self.roi_end}', (self.roi_end[0], self.roi_end[1] + 20),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+
+                    hand_detected = False
+                    if result.multi_hand_landmarks:
+                        for hand_landmarks in result.multi_hand_landmarks:
+                            x = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST].x * frame.shape[1])
+                            y = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST].y * frame.shape[0])
+                            
+                            if (self.roi_start[0] <= x <= self.roi_end[0]) and (self.roi_start[1] <= y <= self.roi_end[1]):
+                                hand_detected = True
+                                if prev_x is None or prev_y is None:
+                                    prev_x, prev_y = x, y
+                                if abs(x - prev_x) < tracking_margin and abs(y - prev_y) < tracking_margin:
+                                    if current_time - last_time >= 1:
+                                        point_homogeneous = np.array([x, y, 1.0], dtype=np.float32).reshape(3, 1)
+                                        transformed_point = np.dot(self.H, point_homogeneous)
+                                        transformed_point /= transformed_point[2]
+                                        transformed_coordinate = tuple(transformed_point[:2].flatten())
+                                        
+                                        if 0 <= transformed_coordinate[0] < self.img_width and 0 <= transformed_coordinate[1] < self.img_height:
+                                            self.coordinates.append(transformed_coordinate)
+                                        else:
+                                            print(f"Transformed coordinate {transformed_coordinate} is out of bounds.")
+                                        last_time = current_time
+                                    prev_x, prev_y = x, y
+                                    self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
+                    
+                    if not hand_detected:
+                        if prev_x is not None and prev_y is not None:
+                            print("손을 인식하지 못했습니다. 다시 시도 중...")
+                            prev_x, prev_y = None, None  
+
+                    cv2.imshow('Hand Tracking', frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        self.cleanup_timer.cancel()
+                        self.exit_flag = True
+                        break
+
+                    if current_time - self.last_processed_time > self.process_interval:
+                        self.process_latest_coordinates()
+                        self.last_processed_time = current_time
+
+                self.cleanup_and_exit()
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        timer = threading.Timer(20.0, self.set_exit_flag)
+        timer.start()
+
+        # `thread.join()`이 타이머 설정 이후로 이동하여 조건을 충족하는지 확인합니다.
+        timer.join()
+        thread.join()
+
+    def set_exit_flag(self):
+        self.exit_flag = True
+        print("Function timed out and will be terminated.")
+
     def process_latest_coordinates(self):
         if self.coordinates:
-            print(f"process_latest_coordinates1 : {self.coordinates}")
             pixel_x, pixel_y = self.coordinates[-1]
-            self.star()
-            self.real_x_cali, self.real_z_cali = self.pixel_to_world(pixel_x, pixel_y, self.camera_matrix)
-            self.process_input(self.real_x_cali, -300, self.real_z_cali)
-            print(f"process_latest_coordinates2 : coordinate {self.coordinates}")
+            self.real_x_cali_mm, self.real_z_cali_mm = self.pixel_to_world(pixel_x, pixel_y)
+            self.process_input(self.real_x_cali_mm, -300, self.real_z_cali_mm)
             
-    def run_robot_arm_tracking(self):
-        self.speak("손 추적 시스템 작동 시작하겠습니다")
-        audio_thread = threading.Thread(target=self.play_audio_game, args=(self.game_file,))
-        adsd_thread = threading.Thread(target=self.adsd)
-        
-        audio_thread.start()
-        adsd_thread.start()
-        
-        adsd_thread.join()
-        audio_thread.join()
-        self.stop_event.set()
-        
-        # self.adsd()  # 손 추적 시작
-        time.sleep(1)
-        self.speak("손 추적 시스템 종료하겠습니다")
-        
-        
     def start_cleanup_timer(self):
+        if self.cleanup_timer is not None:
+            self.cleanup_timer.cancel()  # 기존 타이머 취소
         self.cleanup_timer = Timer(self.cleanup_interval, self.cleanup_lists)
         self.cleanup_timer.start()
         print("start_cleanup_timer")
-
 
     def cleanup_lists(self):
         if len(self.coordinates) > 0:
             del self.coordinates[:len(self.coordinates) // 2]
         if len(self.solutions) > 0:
             del self.solutions[:len(self.solutions) // 2]
-        self.start_cleanup_timer()  # 타이머를 다시 시작
         print("cleanup_lists")
 
-
     def start_cleanup_timer_exit(self):
-        self.cleanup_timer_exit = threading.Timer(20.0, self.cleanup_and_exit)
+        if self.cleanup_timer_exit is not None:
+            self.cleanup_timer_exit.cancel()  # 기존 타이머 취소
+        self.cleanup_timer_exit = Timer(20.0, self.cleanup_and_exit)
         self.cleanup_timer_exit.start()
 
     def cleanup_and_exit(self):
         self.cap.release()
         cv2.destroyAllWindows()
 
+    def tracking_a_banana(self):
+        code = self._arm.set_position(*[-180.5, -75.9, 275.7, -78.9, 79.9, 127.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-171.6, -95.5, 217.8, -166.9, 80.3, 52.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-191.0, -113.9, 208.2, 175.1, 79.2, 42.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-227.0, -135.6, 199.6, 175.7, 79.5, 48.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(4)
+        code = self._arm.close_lite6_gripper()
+        if not self._check_code(code, 'close_lite6_gripper'):
+            return
+        time.sleep(4)
+        code = self._arm.set_position(*[-214.0, -132.8, 344.0, -61.5, 82.5, 168.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-14.9, -218.3, 333.5, 57.4, 83.0, -36.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        self.tracking_home()
 
+    def tracking_b_choco(self):
+        code = self._arm.set_position(*[-164.7, -48.6, 213.8, 178.2, 76.6, 59.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-136.8, -57.5, 198.0, 124.1, 83.6, 27.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-133.5, -99.0, 195.3, 176.2, 83.8, 77.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-129.4, -122.4, 194.4, -176.5, 83.0, 78.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-130.0, -122.7, 202.3, 75.4, 88.4, -29.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(4)
+        code = self._arm.close_lite6_gripper()
+        if not self._check_code(code, 'close_lite6_gripper'):
+            return
+        time.sleep(4)
+        code = self._arm.set_position(*[-155.8, -133.7, 284.0, -56.4, 85.3, -165.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-67.9, -199.1, 329.8, 32.4, 78.3, -66.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-9.4, -196.3, 344.8, 78.7, 84.7, -15.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        self.tracking_home()
+
+    def tracking_c_strawberry(self):
+        code = self._arm.set_position(*[-141.4, 10.7, 212.0, -150.4, 81.8, 70.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-139.7, 8.7, 211.9, -161.9, 82.4, 61.1], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-123.5, -30.0, 211.0, -171.7, 81.9, 79.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-75.2, -92.1, 210.7, 167.9, 81.5, 102.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-74.7, -96.2, 206.9, 176.3, 76.3, 110.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-54.3, -131.9, 208.3, 176.4, 77.7, 107.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-54.7, -133.5, 221.1, 95.0, 87.4, 25.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(4)
+        code = self._arm.close_lite6_gripper()
+        if not self._check_code(code, 'close_lite6_gripper'):
+            return
+        time.sleep(4)
+        code = self._arm.set_position(*[-63.2, -137.3, 276.3, -14.4, 84.7, -94.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-17.4, -176.7, 313.4, 177.9, 89.2, 85.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        self.tracking_home()
+    
+    # ============================== final function5 : trash ============================== #
+    
+    def dh_transform_trash(self, theta, d, a, alpha):
+        theta = np.deg2rad(theta)
+        alpha = np.deg2rad(alpha)
+        return np.array([
+            [np.cos(theta), -np.sin(theta) * np.cos(alpha), np.sin(theta) * np.sin(alpha), a * np.cos(theta)],
+            [np.sin(theta), np.cos(theta) * np.cos(alpha), -np.cos(theta) * np.sin(alpha), a * np.sin(theta)],
+            [0, np.sin(alpha), np.cos(alpha), d],
+            [0, 0, 0, 1]
+        ])
+        
+    def forward_kinematics_trash(self, dh_params, thetas):
+        T = np.eye(4)
+        for i, params in enumerate(dh_params[:-1]):
+            theta = params[0] + thetas[i]
+            d = params[1]
+            a = params[2]
+            alpha = params[3]
+            T_i = self.dh_transform_trash(theta, d, a, alpha)
+            T = np.dot(T, T_i)
+        return T
+
+    def inverse_kinematics_trash(self, target_pos, target_orientation, dh_params, initial_guess):
+        def objective(thetas):
+            T = self.forward_kinematics_trash(dh_params, thetas)
+            pos = T[:3, 3]
+            ori = T[:3, :3]
+            pos_error = np.linalg.norm(pos - target_pos)
+            ori_error = np.linalg.norm(ori - target_orientation)
+
+            
+
+            return pos_error + ori_error 
+        bounds = [(-360, 360), (-150, 150), (-3.5, 300), (-360, 360), (-124, 124), (-360, 360)]
+        result = minimize(objective, initial_guess, bounds=bounds)
+        return result.x
+    
+    def process_input_trash(self, x_input, y_input, z_input):
+    
+        target_pos = np.array([x_input, y_input, z_input])
+        target_orientation = np.array([
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ]) 
+        initial_guesses = [
+            self.current_state,
+            np.random.uniform(-180, 180, 6),
+            np.random.uniform(-180, 180, 6),
+            np.random.uniform(-180, 180, 6),
+        ]
+        solutions_trash = []
+        for initial_guess in initial_guesses:
+            thetas_trash = self.inverse_kinematics_trash(target_pos, target_orientation, self.dh_params, initial_guess)
+            solutions_trash.append(thetas_trash)
+        min_move_solution_trash = min(solutions_trash, key=lambda thetas_trash: np.linalg.norm(thetas_trash - self.current_state))
+        self.current_state = min_move_solution_trash
+        thetas_deg_trash = self.current_state
+        self.solutions_trash.append(thetas_deg_trash)
+        
+        print(f"Move joint angles (in degrees): theta1={thetas_deg_trash[0]:.2f}, theta2={thetas_deg_trash[1]:.2f}, theta3={thetas_deg_trash[2]:.2f}, theta4={thetas_deg_trash[3]:.2f}, theta5={thetas_deg_trash[4]:.2f}, theta6={thetas_deg_trash[5]:.2f}")
+        code = self._arm.set_servo_angle(angle=thetas_deg_trash, speed=20, mvacc=500, wait=False)
+        if not self._check_code(code, 'set_servo_angle'):
+            return
+        time.sleep(1)
+        
+        code = self._arm.set_servo_angle(angle=[thetas_deg_trash[0],thetas_deg_trash[1],thetas_deg_trash[2],thetas_deg_trash[3],thetas_deg_trash[4]+self.offset_deg], speed=20, mvacc=500, wait=False)
+        if not self._check_code(code, 'set_servo_angle'):
+            return
+        time.sleep(1)
+
+    def motion_home_trash1(self):    ###### 1사분면에 쓰레기가 있는 경우 #########   
+        try:
+            print("1")
+            code = self._arm.set_position(*[-104.5, -115.0, 313.6, -75.8, 85.7, 153.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-72.4, -197.3, 347.0, -38.6, 81.1, -151.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[129.2, -215.2, 331.9, -60.7, 78.1, -119.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[216.6, -127.4, 327.7, -73.2, 83.6, -103.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+        except Exception as e:
+            self.pprint('MainException: {}'.format(e))
+
+    def motion_home_trash3(self):      
+        code = self._arm.set_position(*[-163.6, 5.4, 288.4, -17.0, 87.7, 159.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[-94.1, 133.3, 287.8, 42.6, 87.0, 164.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[72.2, 143.7, 282.5, 75.3, 87.1, 136.2], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+        code = self._arm.set_position(*[158.3, 21.6, 280.3, -78.2, 87.8, -73.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+        if not self._check_code(code, 'set_position'):
+            return
+        time.sleep(1)
+
+    def trash(self,input_x,input_y):
+        try:
+            ################ home 근처 쓰레기 ###############################
+            if input_x < -110 :
+                print("Home위치 쓰레기 감지")
+                self.motion_home()
+                self.current_state=np.array([179.2, -42.1, 7.4, 186.7, 41.5, -1.6])
+                if 0< input_y <50  :
+                    self.offset_x=15                            ###self.offset_x,y 실험값
+                    self.offset_y=-15
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90                   ###self.offset_deg 실험값
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                elif 50 <= input_y <= 150 :
+                    self.offset_x=23
+                    self.offset_y=-15
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                elif -13 <= input_y <=-0  :
+                    self.offset_x=12.5
+                    self.offset_y=-5
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                elif  -20 <= input_y <-13  :
+                    self.offset_x=0
+                    self.offset_y=0
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                elif  -50 <= input_y <-20  :
+                    self.offset_x= 10
+                    self.offset_y=-20
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                elif  input_y <-50  :   #####################okay#####################3
+                    self.offset_x= 5
+                    self.offset_y=-10
+                    if -130 <= input_x <-110 :
+                        self.offset_deg = -90
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                        
+                    elif -160 <= input_x <-130 :
+                        self.offset_deg = -87
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+                    
+                    elif -200 <= input_x <-160 :
+                        self.offset_deg = -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+
+                    elif -300 <= input_x < -160 :
+                        self.offset_deg= -84
+                        self.process_input_trash(input_x+self.offset_x,input_y+5+ self.offset_y,331)
+               
+               
+                time.sleep(10)
+                code = self._arm.close_lite6_gripper()
+                if not self._check_code(code, 'close_lite6_gripper'):
+                    return
+                time.sleep(5)
+                self.motion_home()
+                time.sleep(1)
+                self.throw='Home'
+                self.throw_trash()
+
+            elif -110 <= input_x <=160 :
+                print("That position is out of Boundary")
+
+            
+            elif 160 < input_x < 380:
+                
+                if input_y <= 0 :
+                    ################ 1사분면 근처 쓰레기 ############################
+                    print("1사분면 쓰레기 감지")
+                    self.motion_home_trash1()
+                    self.current_state = np.array([329.5,-7,33.6,179.6,51.2,-5.8])
+
+                    if 160 < input_x < 270 :
+                        self.offset_deg=-94
+                        if input_x <225 :
+                            self.offset_x= -20
+                            self.offset_y=-10
+                        elif 225<= input_x :
+                            self.offset_x= -27.5
+                            self.offset_y=-10
+
+                        self.process_input_trash(input_x+self.offset_x,input_y+self.offset_y,332)
+
+                    elif 270 <= input_x <380 :
+                        self.offset_deg= -95
+                        if input_x <300 :
+                            self.offset_x= -27.5
+                            self.offset_y=-10
+
+                        elif 300< input_x <350 :
+                            self.offset_x= -31
+                            self.offset_y=-10
+
+                        elif 350<= input_x :
+                            self.offset_x= -35
+                            self.offset_y=-10
+                        self.process_input_trash(input_x+self.offset_x,input_y+self.offset_y,332)
+                        
+
+                    time.sleep(10)
+                    code = self._arm.close_lite6_gripper()
+                    if not self._check_code(code, 'close_lite6_gripper'):
+                        return
+                    time.sleep(4)
+                    self.process_input(216.6,-127.4,327.7)
+                    self.throw='trash1'
+                    time.sleep(1)
+                    self.throw_trash()
+
+                elif input_y >0 :
+                    ################ 3사분면 근처 쓰레기 ############################
+                    print("3사분면 쓰레기 감지")
+                    self.motion_home_trash3()
+                    self.current_state =np.array([9.4, -31.9, 4, 185.1, 54.7, -5.1])
+                    
+
+                    if 160 < input_x < 270 :
+                        self.offset_deg=-96
+                        self.process_input_trash(input_x,input_y-3,332)
+
+                    elif 270 <= input_x <380 :
+                        self.offset_deg= -95
+                        self.process_input_trash(input_x,input_y-3,332)
+
+                    time.sleep(20)
+
+                    code = self._arm.close_lite6_gripper()
+                    if not self._check_code(code, 'close_lite6_gripper'):
+                        return
+                    time.sleep(4)
+                    
+
+                    
+                    self.process_input(158.3,-21.6,280.3)
+            
+        except:
+            self.motion_home()
+            print("That position is out of Boundary")
+
+    def throw_trash(self):
+            if self.throw == 'Home':
+                code = self._arm.set_position(*[-154.8, -7.0, 320.0, -37.6, 81.6, 142.9], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-124.0, 75.9, 320.4, -179.4, 86.5, -35.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-134.1, 100.9, 285.9, 107.6, 80.4, -119.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(3)
+                code = self._arm.open_lite6_gripper()
+                if not self._check_code(code, 'open_lite6_gripper'):
+                    return
+                time.sleep(3)
+                code = self._arm.stop_lite6_gripper()
+                if not self._check_code(code, 'stop_lite6_gripper'):
+                    return
+                time.sleep(1)
+            
+                code = self._arm.set_position(*[-159.6, 31.7, 294.3, 166.7, 83.5, -27.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+
+
+            elif self.throw == 'trash1' :
+                code = self._arm.set_position(*[216.6, -127.4, 327.7, -58.3, 83.4, -89.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[4.2, -244.0, 352.2, -26.2, 59.2, -112.1], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-231.5, -53.0, 362.1, -1.0, 51.5, -176.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-208.6, 1.8, 339.9, 51.2, 83.0, -141.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-176.8, 62.7, 321.8, 116.2, 80.8, -93.2], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(1)
+                code = self._arm.set_position(*[-128.4, 114.8, 279.0, 157.0, 63.7, -77.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+                time.sleep(3)
+                code = self._arm.open_lite6_gripper()
+                if not self._check_code(code, 'open_lite6_gripper'):
+                    return
+                time.sleep(5)
+                code = self._arm.stop_lite6_gripper()
+                if not self._check_code(code, 'stop_lite6_gripper'):
+                    return  
+                time.sleep(1)
+                code = self._arm.set_position(*[-174.7, -0.9, 311.2, -91.2, 86.0, 86.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+                if not self._check_code(code, 'set_position'):
+                    return
+            else:
+                print("Not designed")
 
 if __name__ == '__main__':
     RobotMain.pprint('xArm-Python-SDK Version:{}'.format(version.__version__))
     arm = XArmAPI('192.168.1.184', baud_checkset=False)
     robot_main = RobotMain(arm)
-    print("start!!!!!!!!!!!!!!!!!!")
-    # robot_main.tracking_home()
-    # robot_main.run_robot_arm_tracking()
-    # robot_main.start_robo()
-    print("finish!!!!!!!!!!!!!!!!!")
-    # robot_main.motion_home()
-    
-    # socket_thread = Thread(target=robot_main.socket_connect)
-    # socket_thread.start()
-    # print('socket_thread start')
-    # joint_state_thread = threading.Thread(target=robot_main.joint_state)
-    # joint_state_thread.start()
-    # print('joint_state_thread_started')
-    # run_thread = threading.Thread(target=robot_main.run)
-    # run_thread.start()
-    # print('run_thread_started')
 
 
 

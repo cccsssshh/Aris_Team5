@@ -10,9 +10,9 @@ class RobotToAdminiPub(Node):
     def __init__(self):
         super().__init__('RobotToAdminiPub')
         self.publisher_ = self.create_publisher(RobotStatusInfo, 'RobotStatusInfo', 10)
-        timer_period = 1.5  # seconds
+        timer_period = 1.0  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
+        # self.i = 0
         self.arm = XArmAPI('192.168.1.184', baud_checkset=False)
         self.robot_main = RobotMain(self.arm)
 
@@ -40,7 +40,7 @@ class RobotToAdminiPub(Node):
         self.get_logger().info(f'Publishing: Joints [{msg.j1}, {msg.j2}, {msg.j3}, {msg.j4}, {msg.j5}, {msg.j6}]')
         self.get_logger().info(f'Publishing: Temperatures [{msg.temperature1}, {msg.temperature2}, {msg.temperature3}, {msg.temperature4}, {msg.temperature5}, {msg.temperature6}]')
         self.get_logger().info('Publishing......!!!!!!!!')
-        self.i += 1
+        # self.i += 1
 
 def main(args=None):
     rclpy.init(args=args)
