@@ -35,6 +35,10 @@ class DataBaseNode(Node):
         self.menuToppingService = self.create_service(MenuTopping, 'MenuTopping', self.menuToppingCallback)
         self.ageService = self.create_service(Age, 'Age', self.ageCallback)
         
+    def initClients(self):
+        self.updateStocksService = self.create_client(ModifyStocks, "updateStocks")
+
+
     def dailyTotalSalesCallback(self, request, response):
         year = request.year
         month = request.month
@@ -251,7 +255,7 @@ class DataBaseNode(Node):
         toppingStockData = [(topping, new_topping_stock)]
         self.dbManager.updateToppingStock(toppingStockData)
 
-        #재고 UI업데이트
+        self.requestUpdateStocks(menuStockData, toppingStockData)
 
         return response
     
@@ -314,6 +318,26 @@ class DataBaseNode(Node):
         response.age_group_sales = age_group_sales
         
         return response
+
+    def requestUpdateStocks(self, menuData, toppingData):
+        request = ModifyStocks.Request()
+        request.stocks.menu = menuData
+        request.stocks.topping = toppingData
+
+        self.get_logger().info("Request stock updates")
+        
+        future = self.updateStocksClient.call_async(request)
+        future.add_done_callback(self.modifyStocksCallback)
+
+    def updateStocksCallback(self, future):
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().info("Stocks successfully updated")
+            else:
+                self.get_logger().info("Failed to update stocks")
+        except Exception as e:
+            self.get_logger().error(f"Update Stocks service call failed: {e}")
 
 
 class DatabaseManager:

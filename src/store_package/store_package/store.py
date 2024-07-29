@@ -54,6 +54,7 @@ class StoreNode(Node, QObject):
             depth=10
         )
         self.initClients()
+        self.initServices()
         self.waitServices()
 
     def initClients(self):
@@ -66,6 +67,9 @@ class StoreNode(Node, QObject):
         self.hourlySalesClient = self.create_client(HourlySales, 'hourlySales')
         self.menuToppingClient = self.create_client(MenuTopping, 'MenuTopping')
         self.ageClient = self.create_client(Age, 'Age')
+
+    def initServices(self):
+        self.updateStocksClient = self.create_service(ModifyStocks, 'updateStocks', self.updateStocksCallback)
 
     def initSub(self):
         self.jointTempSub = self.create_subscription(RobotStatusInfo, 'RobotStatusInfo', self.robotStatusInfocallback, self.qos_profile)
@@ -311,6 +315,17 @@ class StoreNode(Node, QObject):
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')
 
+    def updateStocksCallback(self, request, response):
+        self.get_logger().info(f"Get request from updateStocksClient")
+        try:
+            self.stocks.emit(request.stocks)
+            response.success = True
+            self.get_logger().info("Stocks successfully update in UI")
+        except Exception as e:
+            response.success = False
+            self.get_logger().error(f"Failed to update stocks in UI: {e}")
+
+        return response
 
 class Calendar(QCalendarWidget):
     dateClicked = pyqtSignal(QDate)
