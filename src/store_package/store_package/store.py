@@ -55,6 +55,7 @@ class StoreNode(Node, QObject):
         )
         self.initClients()
         self.initServices()
+        self.initSub()
         self.waitServices()
 
     def initClients(self):
@@ -257,7 +258,7 @@ class StoreNode(Node, QObject):
     
     def robotStatusInfocallback(self, msg):
         joints = [f"{msg.j1:.2f}", f"{msg.j2:.2f}", f"{msg.j3:.2f}", f"{msg.j4:.2f}", f"{msg.j5:.2f}", f"{msg.j6:.2f}"]
-        temperatures = [f"{msg.t1:.2f}", f"{msg.t2:.2f}", f"{msg.t3:.2f}", f"{msg.t4:.2f}", f"{msg.t5:.2f}", f"{msg.t6:.2f}"]
+        temperatures = [f"{msg.temperature1:.2f}", f"{msg.temperature2:.2f}", f"{msg.temperature3:.2f}", f"{msg.temperature4:.2f}", f"{msg.temperature5:.2f}", f"{msg.temperature6:.2f}"]
         self.robotStatus.emit(joints, temperatures)
         self.get_logger().info(f'\n Joints: {joints}\n Temperatures: {temperatures}')
 
@@ -329,6 +330,7 @@ class StoreNode(Node, QObject):
 
 class Calendar(QCalendarWidget):
     dateClicked = pyqtSignal(QDate)
+    monthChanged = pyqtSignal(int, int) 
 
     def __init__(self, parent=None):
         super(Calendar, self).__init__(parent)
@@ -337,6 +339,7 @@ class Calendar(QCalendarWidget):
 
     def initWindow(self):
         self.clicked.connect(self.selectDate)
+        self.currentPageChanged.connect(self.onMonthChanged)
 
     def setDailyTotalSales(self, salesRecords):
         self.salesRecords = salesRecords
@@ -356,6 +359,9 @@ class Calendar(QCalendarWidget):
     def selectDate(self):
         selectedDate = self.selectedDate()
         self.dateClicked.emit(selectedDate) 
+    
+    def onMonthChanged(self, year, month):
+        self.monthChanged.emit(year, month)
 
 class LoginPage(QDialog, loginClass):
     def __init__(self):
@@ -452,6 +458,7 @@ class MainPage(QMainWindow, mainClass):
         self.storeNode.monthTotalSales.connect(self.updateMonthTotalSales)
         self.storeNode.stocks.connect(self.updateStocks)
         self.calendarWidget.dateClicked.connect(self.showDailySalesPage)
+        self.calendarWidget.monthChanged.connect(self.showMonthlySales)
 
     def initializeCalendar(self):
         self.calendarContainer = self.findChild(QWidget, "calendarContainer")  # 디자이너에서 설정한 이름 사용
@@ -559,6 +566,11 @@ class MainPage(QMainWindow, mainClass):
     def showDailySalesPage(self, date):
         self.dailySalesWindow = DailySalesPage(self.storeNode, date)
         self.dailySalesWindow.show()
+
+    @pyqtSlot(int, int)
+    def showMonthlySales(self, year, month):
+        self.storeNode.requestDailyTotalSales(str(year), str(month))
+        self.storeNode.requestMonthTotalSales(str(year), str(month))
 
     def showRobotManagePage(self):
         self.robotManageWindow = RobotManagePage(self.storeNode)
@@ -1120,7 +1132,7 @@ class RobotManagePage(QDialog, robotClass):
         self.temp3Line.setText(temperatures[2])
         self.temp4Line.setText(temperatures[3])
         self.temp5Line.setText(temperatures[4])
-        self.temp6Line.setText(temperatures[6])
+        self.temp6Line.setText(temperatures[5])
 
 
 

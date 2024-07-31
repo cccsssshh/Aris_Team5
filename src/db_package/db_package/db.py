@@ -52,11 +52,20 @@ class DataBaseNode(Node):
         year = request.year
         month = request.month
         self.get_logger().info(f"Get request from monthTotalSalesClient year : {year}, month : {month}")
-        results = self.dbManager.getMonthTotalSales(year, month)
-        response.total_sales = int(results[0][0])
-
+        
+        try:
+            results = self.dbManager.getMonthTotalSales(year, month)
+            if results and results[0] and results[0][0] is not None:
+                response.total_sales = int(results[0][0])
+            else:
+                response.total_sales = 0
+                self.get_logger().warn(f"No sales data found for year: {year}, month: {month}")
+        except Exception as e:
+            self.get_logger().error(f"Error processing monthly total sales: {e}")
+            response.total_sales = 0
+        
         return response
-
+    
     def stocksCallback(self, request, response):
         self.get_logger().info(f"Get request from stocksClient")
         menu_result, topping_result = self.dbManager.getStocks()
@@ -659,9 +668,9 @@ if __name__ == "__main__":
 
         # 덤프 데이터 넣기
         dbManager.truncateTable()
-        startDate = datetime.strptime('2024-07-04 00:00:00', '%Y-%m-%d %H:%M:%S')
-        endDate = datetime.strptime('2024-07-17 23:59:59', '%Y-%m-%d %H:%M:%S')
-        dbManager.insertDummyData(1000, startDate, endDate)
+        startDate = datetime.strptime('2024-06-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+        endDate = datetime.strptime('2024-07-30 23:59:59', '%Y-%m-%d %H:%M:%S')
+        dbManager.insertDummyData(10000, startDate, endDate)
 
     finally:
         dbManager.disconnect()
