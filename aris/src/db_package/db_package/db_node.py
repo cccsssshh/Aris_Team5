@@ -2,23 +2,33 @@ from datetime import datetime
 from rclpy.node import Node
 from interface_package.msg import StockInfo, StocksArray, OrderInfo, Item
 from interface_package.srv import DailyTotalSales, MonthTotalSales, Stocks, ModifyStocks, DailySales, MenuDailySales, HourlySales, OrderRecord, RestQuantity, MenuTopping, Age
-
-from db_package.db import DatabaseManager
+from db_package.db_manager import DatabaseManager
+from db_package.config_loader import databaseConfig
 
 class DataBaseNode(Node):
+    """
+        데이터베이스 노드
+    """
+
     def __init__(self):
         super().__init__('database_node')
+        self.db_config = databaseConfig
         self.initDataBase()
         self.initServices()
 
+
     def initDataBase(self):
-        self.dbManager = DatabaseManager(
-                host="localhost",
-                user="root",
-                password="amr231218!",
-                database="ArisTeam5"
+        # db_config가 None이 아니고 필요한 키가 있는지 확인
+        if self.db_config and all(key in self.db_config for key in ['host', 'user', 'password', 'name']):
+            self.dbManager = DatabaseManager(
+                host=self.db_config['host'],
+                user=self.db_config['user'],
+                password=self.db_config['password'],
+                database=self.db_config['name']
             )
-        self.dbManager.connect()
+            self.dbManager.connect()
+        else:
+            raise ValueError("Invalid database configuration")
 
     def initServices(self):
         self.dailyTotalSalesService = self.create_service(DailyTotalSales, "dailyTotalSales", self.dailyTotalSalesCallback)

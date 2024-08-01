@@ -8,3 +8,4 @@ aris/.vscode/
 aris/src/kiosk_package/models/*.keras
 aris/src/kiosk_package/models/*.hdf5
 
+aris/src/db_package/db_package/config/database_config.yaml
