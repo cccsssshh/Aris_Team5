@@ -1,10 +1,10 @@
 # ROS2
-build/
-install/
-log/
-.vscode/
+aris/build/
+aris/install/
+aris/log/
+aris/.vscode/
 
 # Ignore Keras model files
-src/kiosk_package/models/*.keras
-src/kiosk_package/models/*.hdf5
+aris/src/kiosk_package/models/*.keras
+aris/src/kiosk_package/models/*.hdf5
 
