@@ -1,0 +1,10 @@
+int16 order_number
+string date
+string menu
+string topping
+int16 price
+int16 quantity
+string gender
+string age
+---
+bool success
