@@ -3,6 +3,8 @@ import numpy as np
 import os
 import glob
 
+########111111111111111111################
+
 # 비디오 캡처 초기화
 capL = cv2.VideoCapture(2)
 # capR = cv2.VideoCapture(4)
@@ -115,7 +117,7 @@ newCameraMatrixL, roiL = cv2.getOptimalNewCameraMatrix(cameraMatrixL, distL, (wi
 
 dstL = cv2.undistort(imgL, cameraMatrixL, distL, None, newCameraMatrixL)
 
-# crop the image
+# crop the imageg
 xL, yL, wL, hL = roiL
 dstL = dstL[yL:yL + hL, xL:xL + wL]
 
