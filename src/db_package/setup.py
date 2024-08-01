@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'db = db_package.db:main'
+            'db = db_package.main:main'
         ],
     },
 )
