@@ -1,6 +1,0 @@
-int32 year
-int32 month
-int32 day
----
-string[] age_groups
-int32[] age_group_sales

@@ -1,7 +1,0 @@
-int32 year
-int32 month
-int32 day
----
-string[] menu_names
-string[] topping_names
-int32[] counts
