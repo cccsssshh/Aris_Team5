@@ -32,4 +32,5 @@ def load_config(config_file_name):
         raise
 
     return config_data
+
 databaseConfig = load_config("database_config")
