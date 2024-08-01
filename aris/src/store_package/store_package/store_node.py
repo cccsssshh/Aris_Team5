@@ -143,13 +143,11 @@ class StoreNode(Node, QObject):
         try:
             response = future.result()
             self.get_logger().info(f"Received response from stockService")
-            
-            # 메뉴 아이템 출력
+
             self.get_logger().info(f"Menu Items:")
             for item in response.stocks.menu:
                 self.get_logger().info(f"Name: {item.name}, Stock: {item.stock}")
             
-            # 토핑 아이템 출력
             self.get_logger().info(f"Toppings:")
             for item in response.stocks.topping:
                 self.get_logger().info(f"Name: {item.name}, Stock: {item.stock}")
@@ -253,17 +251,14 @@ class StoreNode(Node, QObject):
         try:
             response = future.result()
             
-            # 서비스 응답에서 데이터 추출
             menu_names = response.menu_names
             topping_names = response.topping_names
             counts = list(response.counts)
 
-            # 로깅
             self.get_logger().info(f"Menu Names: {menu_names}")
             self.get_logger().info(f"Topping Names: {topping_names}")
             self.get_logger().info(f"Counts: {counts}")
 
-            # Qt 신호로 데이터 전송
             self.menuToppingSales.emit(menu_names, topping_names, counts)
 
         except Exception as e:
@@ -282,13 +277,11 @@ class StoreNode(Node, QObject):
     def ageSalesCallback(self, future):
         try:
             response = future.result()
-            # array를 list로 변환
             age_groups = response.age_groups
-            age_group_sales = list(response.age_group_sales)  # array를 list로 변환
+            age_group_sales = list(response.age_group_sales)
             self.get_logger().info(f"Age Groups: {age_groups}")
             self.get_logger().info(f"Age Group Sales: {age_group_sales}")
 
-            # 신호 발송
             self.ageSales.emit(age_groups, age_group_sales)
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')
