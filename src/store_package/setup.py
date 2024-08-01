@@ -21,7 +21,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'store = store_package.store:main'
+            'store = store_package.main:main'
         ],
     },
 )
