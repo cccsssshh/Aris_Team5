@@ -2265,7 +2265,7 @@ class RobotMain(object):
             if not self._check_code(code, 'set_position'):
                 return
             
-            time.sleep(8)
+            time.sleep(20)
             code = self._arm.set_cgpio_digital(3, 0, delay_sec=0)
             if not self._check_code(code, 'set_cgpio_digital'):
                 return
@@ -2337,7 +2337,7 @@ class RobotMain(object):
             if not self._check_code(code, 'set_position'):
                 return
     
-            time.sleep(8)
+            time.sleep(20)
             code = self._arm.set_cgpio_digital(3, 0, delay_sec=0)
             if not self._check_code(code, 'set_cgpio_digital'):
                 return
@@ -2395,7 +2395,7 @@ class RobotMain(object):
             if not self._check_code(code, 'set_position'):
                 return
             
-            time.sleep(8)
+            time.sleep(20)
             code = self._arm.set_cgpio_digital(3, 0, delay_sec=0)
             if not self._check_code(code, 'set_cgpio_digital'):
                 return
@@ -3474,12 +3474,12 @@ class RobotMain(object):
         
         # ==================== error check ==================== #      
         
-        self.alive = False
-        self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
-        self._arm.release_state_changed_callback(self._state_changed_callback)
+        # self.alive = False
+        # self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
+        # self._arm.release_state_changed_callback(self._state_changed_callback)
         
-        if hasattr(self._arm, 'release_count_changed_callback'):
-            self._arm.release_count_changed_callback(self._count_changed_callback)
+        # if hasattr(self._arm, 'release_count_changed_callback'):
+        #     self._arm.release_count_changed_callback(self._count_changed_callback)
 
     def run_choco(self):
         # -------------- icecream start--------------------
@@ -3488,7 +3488,7 @@ class RobotMain(object):
             if not start_b:
                 self.speak("초코 아이스크림 주문 받았습니다.")
                 self.motion_home()
-                self.motion_grab_capsule_b()
+                self.motion_grab_capsule_b_down()
                 self.motion_check_sealing()
                 self.motion_place_capsule()
                 self.motion_grab_cup_b()
@@ -3509,12 +3509,12 @@ class RobotMain(object):
         
         # ==================== error check ==================== #      
         
-        self.alive = False
-        self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
-        self._arm.release_state_changed_callback(self._state_changed_callback)
+        # self.alive = False
+        # self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
+        # self._arm.release_state_changed_callback(self._state_changed_callback)
         
-        if hasattr(self._arm, 'release_count_changed_callback'):
-            self._arm.release_count_changed_callback(self._count_changed_callback)
+        # if hasattr(self._arm, 'release_count_changed_callback'):
+        #     self._arm.release_count_changed_callback(self._count_changed_callback)
 
     def run_strawberry(self):
         # -------------- icecream start--------------------
@@ -3544,12 +3544,12 @@ class RobotMain(object):
         
         # ==================== error check ==================== #      
         
-        self.alive = False
-        self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
-        self._arm.release_state_changed_callback(self._state_changed_callback)
+        # self.alive = False
+        # self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
+        # self._arm.release_state_changed_callback(self._state_changed_callback)
         
-        if hasattr(self._arm, 'release_count_changed_callback'):
-            self._arm.release_count_changed_callback(self._count_changed_callback)
+        # if hasattr(self._arm, 'release_count_changed_callback'):
+        #     self._arm.release_count_changed_callback(self._count_changed_callback)
 
     def apocato(self):
          # -------------- apocato start--------------------
@@ -3586,12 +3586,12 @@ class RobotMain(object):
         
         # ==================== error check ==================== #      
         
-        self.alive = False
-        self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
-        self._arm.release_state_changed_callback(self._state_changed_callback)
+        # self.alive = False
+        # self._arm.release_error_warn_changed_callback(self._error_warn_changed_callback)
+        # self._arm.release_state_changed_callback(self._state_changed_callback)
         
-        if hasattr(self._arm, 'release_count_changed_callback'):
-            self._arm.release_count_changed_callback(self._count_changed_callback)
+        # if hasattr(self._arm, 'release_count_changed_callback'):
+        #     self._arm.release_count_changed_callback(self._count_changed_callback)
 
 # ============================== final function1 : hand gesture robot arm control ============================== #
     def final_hand_machine(self):
@@ -3726,12 +3726,6 @@ class RobotMain(object):
 # ============================== final function2 : speech recognition robot arm control ============================== #
 
     def apogato_bluetooth(self):
-        cap = cv2.VideoCapture(0)
-
-        if not cap.isOpened():
-            print("Error: Could not open camera.")
-            return
-        ret, frame = cap.read()
         server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
 
         port = 1
@@ -3932,7 +3926,7 @@ class RobotMain(object):
         adsd_thread.start()
         
         # 20초 후에 stop_event를 설정하여 함수를 종료하도록 합니다.
-        timer = threading.Timer(20.0, self.stop_event.set)
+        timer = threading.Timer(100.0, self.stop_event.set) ## 20 sec
         timer.start()
         
         adsd_thread.join() # 손 추적 스레드가 종료될 때까지 기다립니다.
@@ -4099,7 +4093,7 @@ class RobotMain(object):
 
         thread = threading.Thread(target=run)
         thread.start()
-        timer = threading.Timer(20.0, self.set_exit_flag)
+        timer = threading.Timer(100.0, self.set_exit_flag) ## 20 sec
         timer.start()
 
         # `thread.join()`이 타이머 설정 이후로 이동하여 조건을 충족하는지 확인합니다.
@@ -4133,7 +4127,7 @@ class RobotMain(object):
     def start_cleanup_timer_exit(self):
         if self.cleanup_timer_exit is not None:
             self.cleanup_timer_exit.cancel()  # 기존 타이머 취소
-        self.cleanup_timer_exit = Timer(20.0, self.cleanup_and_exit)
+        self.cleanup_timer_exit = Timer(100.0, self.cleanup_and_exit)  ## 20 sec
         self.cleanup_timer_exit.start()
 
     def cleanup_and_exit(self):
@@ -4141,116 +4135,125 @@ class RobotMain(object):
         cv2.destroyAllWindows()
 
     def tracking_a_banana(self):
-        code = self._arm.set_position(*[-180.5, -75.9, 275.7, -78.9, 79.9, 127.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-171.6, -95.5, 217.8, -166.9, 80.3, 52.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-191.0, -113.9, 208.2, 175.1, 79.2, 42.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-227.0, -135.6, 199.6, 175.7, 79.5, 48.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(4)
-        code = self._arm.close_lite6_gripper()
-        if not self._check_code(code, 'close_lite6_gripper'):
-            return
-        time.sleep(4)
-        code = self._arm.set_position(*[-214.0, -132.8, 344.0, -61.5, 82.5, 168.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-14.9, -218.3, 333.5, 57.4, 83.0, -36.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        self.tracking_home()
-
+        try:
+            code = self._arm.set_position(*[-180.5, -75.9, 275.7, -78.9, 79.9, 127.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-171.6, -95.5, 217.8, -166.9, 80.3, 52.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-191.0, -113.9, 208.2, 175.1, 79.2, 42.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-227.0, -135.6, 199.6, 175.7, 79.5, 48.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(4)
+            code = self._arm.close_lite6_gripper()
+            if not self._check_code(code, 'close_lite6_gripper'):
+                return
+            time.sleep(4)
+            code = self._arm.set_position(*[-214.0, -132.8, 344.0, -61.5, 82.5, 168.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-14.9, -218.3, 333.5, 57.4, 83.0, -36.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            self.tracking_home()
+        except Exception as e:
+            self.pprint('MainException: {}'.format(e))
+            
     def tracking_b_choco(self):
-        code = self._arm.set_position(*[-164.7, -48.6, 213.8, 178.2, 76.6, 59.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-136.8, -57.5, 198.0, 124.1, 83.6, 27.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-133.5, -99.0, 195.3, 176.2, 83.8, 77.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-129.4, -122.4, 194.4, -176.5, 83.0, 78.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-130.0, -122.7, 202.3, 75.4, 88.4, -29.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(4)
-        code = self._arm.close_lite6_gripper()
-        if not self._check_code(code, 'close_lite6_gripper'):
-            return
-        time.sleep(4)
-        code = self._arm.set_position(*[-155.8, -133.7, 284.0, -56.4, 85.3, -165.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-67.9, -199.1, 329.8, 32.4, 78.3, -66.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-9.4, -196.3, 344.8, 78.7, 84.7, -15.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        self.tracking_home()
+        try:
+            code = self._arm.set_position(*[-164.7, -48.6, 213.8, 178.2, 76.6, 59.0], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-136.8, -57.5, 198.0, 124.1, 83.6, 27.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-133.5, -99.0, 195.3, 176.2, 83.8, 77.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-129.4, -122.4, 194.4, -176.5, 83.0, 78.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-130.0, -122.7, 202.3, 75.4, 88.4, -29.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(4)
+            code = self._arm.close_lite6_gripper()
+            if not self._check_code(code, 'close_lite6_gripper'):
+                return
+            time.sleep(4)
+            code = self._arm.set_position(*[-155.8, -133.7, 284.0, -56.4, 85.3, -165.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-67.9, -199.1, 329.8, 32.4, 78.3, -66.8], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-9.4, -196.3, 344.8, 78.7, 84.7, -15.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            self.tracking_home()
+        except Exception as e:
+            self.pprint('MainException: {}'.format(e))
 
     def tracking_c_strawberry(self):
-        code = self._arm.set_position(*[-141.4, 10.7, 212.0, -150.4, 81.8, 70.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-139.7, 8.7, 211.9, -161.9, 82.4, 61.1], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-123.5, -30.0, 211.0, -171.7, 81.9, 79.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-75.2, -92.1, 210.7, 167.9, 81.5, 102.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-74.7, -96.2, 206.9, 176.3, 76.3, 110.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-54.3, -131.9, 208.3, 176.4, 77.7, 107.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-54.7, -133.5, 221.1, 95.0, 87.4, 25.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(4)
-        code = self._arm.close_lite6_gripper()
-        if not self._check_code(code, 'close_lite6_gripper'):
-            return
-        time.sleep(4)
-        code = self._arm.set_position(*[-63.2, -137.3, 276.3, -14.4, 84.7, -94.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        code = self._arm.set_position(*[-17.4, -176.7, 313.4, 177.9, 89.2, 85.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
-        if not self._check_code(code, 'set_position'):
-            return
-        time.sleep(1)
-        self.tracking_home()
+        try:
+            code = self._arm.set_position(*[-141.4, 10.7, 212.0, -150.4, 81.8, 70.3], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-139.7, 8.7, 211.9, -161.9, 82.4, 61.1], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-123.5, -30.0, 211.0, -171.7, 81.9, 79.5], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-75.2, -92.1, 210.7, 167.9, 81.5, 102.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-74.7, -96.2, 206.9, 176.3, 76.3, 110.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-54.3, -131.9, 208.3, 176.4, 77.7, 107.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-54.7, -133.5, 221.1, 95.0, 87.4, 25.4], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(4)
+            code = self._arm.close_lite6_gripper()
+            if not self._check_code(code, 'close_lite6_gripper'):
+                return
+            time.sleep(4)
+            code = self._arm.set_position(*[-63.2, -137.3, 276.3, -14.4, 84.7, -94.7], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            code = self._arm.set_position(*[-17.4, -176.7, 313.4, 177.9, 89.2, 85.6], speed=self._tcp_speed, mvacc=self._tcp_acc, radius=0.0, wait=False)
+            if not self._check_code(code, 'set_position'):
+                return
+            time.sleep(1)
+            self.tracking_home()
+        except Exception as e:
+            self.pprint('MainException: {}'.format(e))
     
     # ============================== final function5 : trash ============================== #
     
@@ -4646,7 +4649,24 @@ if __name__ == '__main__':
     RobotMain.pprint('xArm-Python-SDK Version:{}'.format(version.__version__))
     arm = XArmAPI('192.168.1.184', baud_checkset=False)
     robot_main = RobotMain(arm)
-
+    # robot_main.tracking_b_choco()
+    # time.sleep(1)
+    # robot_main.run_robot_arm_tracking()
+    # time.sleep(1)
+    # robot_main.tracking_home()
+    # time.sleep(1)
+    # robot_main.motion_home()
+    # time.sleep(1)
+    
+    # time.sleep(1)
+    # robot_main.tracking_b_choco()
+    # time.sleep(1)
+    # robot_main.run_robot_arm_tracking()
+    # robot_main.run_choco()
+    # time.sleep(1)
+    # robot_main.motion_greet()
+    # time.sleep(1)
+    # robot_main.motion_home()
 
 
 

@@ -1,7 +1,6 @@
-
 import rclpy
 from rclpy.lifecycle import LifecycleNode, LifecycleState
-from rclpy.lifecycle import TransitionCallbackReturn  # Importing TransitionCallbackReturn from rclpy
+from rclpy.lifecycle import TransitionCallbackReturn
 from interface_package.srv import IceRobot
 from robot_package.scripts import RobotMain
 from xarm.wrapper import XArmAPI
@@ -67,6 +66,38 @@ class RobotToKiosk(LifecycleNode):
     def handle_half(self):
         self.robot_main.final_run_half()
         self.get_logger().info('Half ice cream process initiated')
+        
+    def handle_tracking_a(self):
+        self.get_logger().info('Tracking tracking_a_banana')
+        self.robot_main.tracking_a_banana()
+        self.get_logger().info('Tracking tracking_a_banana')
+        
+    def handle_tracking_b(self):
+        self.get_logger().info('Tracking tracking_b_choco')
+        self.robot_main.tracking_b_choco()
+        self.get_logger().info('Tracking tracking_b_choco')
+        
+    def handle_tracking_c(self):
+        self.get_logger().info('Tracking tracking_c_strawberry')
+        self.robot_main.tracking_c_strawberry()
+        self.get_logger().info('Tracking tracking_c_strawberry')
+        
+    def gripper(self):
+        try:
+            code = self.arm.open_lite6_gripper()
+            if code != 0:
+                self.get_logger().error(f'Failed to open gripper, error code: {code}')
+                return
+            
+            time.sleep(5)
+            
+            code = self.arm.stop_lite6_gripper()
+            if code != 0:
+                self.get_logger().error(f'Failed to stop gripper, error code: {code}')
+                return
+
+        except Exception as e:
+            self.get_logger().error(f'Error in gripper operation: {e}')
 
 # ========================= lifecycle node ========================= # 
     '''
@@ -81,15 +112,16 @@ class RobotToKiosk(LifecycleNode):
     deactive
     ros2 lifecycle set /RobotToKiosk deactivate
 
-
     shutdown
     ros2 lifecycle set /RobotToKiosk shutdown
     '''
 
-    def publish_status(self):
-        msg = Bool()        
-        state = self._state_machine.current_state[1]
-        msg.data = (state == 'active')
+    def publish_status(self, state):
+        msg = Bool()
+        if state == 'active':
+            msg.data = True
+        elif state == 'inactive':
+            msg.data = False
         self.status_publisher.publish(msg)
         self.get_logger().info(f'Published status: {msg.data}')
 
@@ -106,8 +138,10 @@ class RobotToKiosk(LifecycleNode):
         try:
             self.get_logger().info('Entering ACTIVATE state.')
             self.get_logger().info('RobotToKiosk node is now ACTIVE.')
-            self.publish_status()
-            self.timer = self.create_timer(1.0, self.publish_status)
+            self.publish_status('active')
+            if self.timer:
+                self.timer.cancel()
+            # self.timer = self.create_timer(1.0, lambda: self.publish_status('active'))
             return TransitionCallbackReturn.SUCCESS
         except Exception as e:
             self.get_logger().error(f'Error during ACTIVATE: {e}')
@@ -117,6 +151,8 @@ class RobotToKiosk(LifecycleNode):
         try:
             self.get_logger().info('Entering DEACTIVATE state.')
             self.get_logger().info('RobotToKiosk node is now INACTIVE.')
+            self.publish_status('inactive')
+            # self.timer = self.create_timer(1.0, lambda: self.publish_status('inactive'))
             if self.timer:
                 self.timer.cancel()
             return TransitionCallbackReturn.SUCCESS
@@ -144,42 +180,72 @@ class RobotToKiosk(LifecycleNode):
             "아포가토": self.robot_main.apogato_bluetooth
         }
         
-        if menu in actions:
-            actions[menu]()
-            time.sleep(1)
-            
-            if menu == "banana":
-                if tracking == "serving":
-                    self.robot_main.tracking_a_banana()
-                    time.sleep(1)
-                    self.handle_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                elif shaking == "hello":
-                    self.handle_shaking()
-            
-            elif menu == "choco":
-                if tracking == "serving":
-                    self.robot_main.tracking_b_choco()
-                    time.sleep(1)
-                    self.handle_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                elif shaking == "hello":
-                    self.handle_shaking()
+        try:
+            if menu in actions:
+                actions[menu]()
+                time.sleep(1)
 
-            elif menu == "berry":
-                if tracking == "serving":
-                    self.robot_main.tracking_c_strawberry()
-                    time.sleep(1)
-                    self.handle_tracking()
-                    time.sleep(1)
-                    self.robot_main.speak("아이스크림을 가져가 주세요")
-                    
-                elif shaking == "hello":
-                    self.handle_shaking()
-            
-            self.get_logger().info(f'{menu} processed')
+                if menu == "banana":
+                    if tracking == "serving":
+                        try:
+                            self.handle_tracking_a()
+                            time.sleep(1)
+                            self.handle_tracking()
+                            time.sleep(1)
+                            self.robot_main.tracking_home()
+                            self.robot_main.speak("아이스크림을 가져가 주세요")
+                            time.sleep(3)
+                            self.gripper()
+                            time.sleep(1)
+                            self.robot_main.motion_home()
+                            
+                        except Exception as e:
+                            self.get_logger().error(f'Error during banana tracking/serving: {e}')
+                    elif shaking == "hello":
+                        self.handle_shaking()
+                
+                elif menu == "choco":
+                    if tracking == "serving":
+                        try:
+                            self.handle_tracking_b()
+                            time.sleep(1)
+                            self.handle_tracking()
+                            time.sleep(1)
+                            self.robot_main.tracking_home()
+                            self.robot_main.speak("아이스크림을 가져가 주세요")
+                            time.sleep(3)
+                            self.gripper()
+                            time.sleep(1)
+                            self.robot_main.motion_home()
+
+                        except Exception as e:
+                            self.get_logger().error(f'Error during choco tracking/serving: {e}')
+                    elif shaking == "hello":
+                        self.handle_shaking()
+
+                elif menu == "berry":
+                    if tracking == "serving":
+                        try:
+                            self.handle_tracking_c()
+                            time.sleep(1)
+                            self.handle_tracking()
+                            time.sleep(1)
+                            self.robot_main.tracking_home()
+                            self.robot_main.speak("아이스크림을 가져가 주세요")
+                            time.sleep(3)
+                            self.gripper()
+                            time.sleep(1)
+                            self.robot_main.motion_home()
+                            
+                        except Exception as e:
+                            self.get_logger().error(f'Error during berry tracking/serving: {e}')
+                    elif shaking == "hello":
+                        self.handle_shaking()
+                
+                self.get_logger().info(f'{menu} processed')
+
+        except Exception as e:
+            self.get_logger().error(f'Error in handle_menu: {e}')
 
 def main(args=None):
     rclpy.init(args=args)
