@@ -1,12 +1,9 @@
-import os
-import glob
 from PyQt5.QtWidgets import *
 from PyQt5 import uic
 from PyQt5.QtCore import QDate, Qt, pyqtSlot
 
 import rclpy as rp
 from interface_package.msg import StockInfo
-
 
 from store_package.ui_components import Calendar
 from store_package.daily_sales_page import DailySalesPage
@@ -37,7 +34,7 @@ class MainPage(QMainWindow, mainClass):
         self.calendarWidget.monthChanged.connect(self.showMonthlySales)
 
     def initializeCalendar(self):
-        self.calendarContainer = self.findChild(QWidget, "calendarContainer")  # 디자이너에서 설정한 이름 사용
+        self.calendarContainer = self.findChild(QWidget, "calendarContainer")
         self.calendarLayout = QVBoxLayout(self.calendarContainer)
         self.calendarWidget = Calendar(self.calendarContainer)
         self.calendarLayout.addWidget(self.calendarWidget)
@@ -65,7 +62,7 @@ class MainPage(QMainWindow, mainClass):
     def closeEvent(self, event):
         self.storeNode.destroy_node()
         rp.shutdown()
-        event.accept()  # 창을 닫음
+        event.accept()
 
     @pyqtSlot(object)
     def updateDailyTotalSales(self, data):
@@ -86,7 +83,6 @@ class MainPage(QMainWindow, mainClass):
 
     @pyqtSlot(object)
     def updateStocks(self, data):
-        # print(data)
 
         spinBoxMapping = {
             "딸기" : self.strawberrySpinBox,
@@ -102,7 +98,6 @@ class MainPage(QMainWindow, mainClass):
             if item.name in spinBoxMapping:
                 spinBoxMapping[item.name].setValue(item.stock)
 
-        # topping 항목 처리
         for item in data.topping:
             if item.name in spinBoxMapping:
                 spinBoxMapping[item.name].setValue(item.stock)

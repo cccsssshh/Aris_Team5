@@ -66,14 +66,12 @@ class DatabaseManager:
     def updateMenuStock(self, data):
         query = "UPDATE menu SET stock = %s WHERE name = %s"
         for itemName, itemStock in data:
-            # print(f"Updating menu item: {itemName} with stock: {itemStock}")
             self._executeQuery(query, (itemStock, itemName), fetch=False)
         print("Menu stock updated successfully")
 
     def updateToppingStock(self, data):
         query = "UPDATE topping SET stock = %s WHERE name = %s"
         for itemName, itemStock in data:
-            # print(f"Updating topping item: {itemName} with stock: {itemStock}")
             self._executeQuery(query, (itemStock, itemName), fetch=False)
         print("Topping stock updated successfully")
 
@@ -92,11 +90,15 @@ class DatabaseManager:
         query = """
         SELECT DATE(order_datetime) as date, SUM(price * quantity) as total_sales
         FROM sales
-        WHERE Year(order_datetime) = %s and MONTH(order_datetime) = %s
+        WHERE YEAR(order_datetime) = %s and MONTH(order_datetime) = %s
         GROUP BY date
         ORDER BY date
         """
-        return self._executeQuery(query, (year, month), fetch=True)
+        try:
+            return self._executeQuery(query, (year, month), fetch=True)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
 
     def getMonthTotalSales(self, year, month):
         query = """
@@ -165,7 +167,6 @@ class DatabaseManager:
             count DESC;
         """
         
-        # 날짜 포맷: 'YYYY-MM-DD'
         date_str = f"{year:04d}-{month:02d}-{day:02d}"
         result = self._executeQuery(query, (date_str,), fetch=True)
         
@@ -173,16 +174,11 @@ class DatabaseManager:
         topping_names = []
         counts = []
         
-        # 결과를 튜플로 처리
         for row in result:
-            # 결과 확인
-            # print(f"Row: {row}")
-            
             try:
-                # 튜플의 인덱스에 맞춰 데이터 접근
                 menu_name = row[0]
                 topping_name = row[1]
-                count = int(row[2])  # 판매 개수를 int로 변환
+                count = int(row[2])
                 
                 menu_names.append(menu_name)
                 topping_names.append(topping_name)
@@ -190,10 +186,6 @@ class DatabaseManager:
             
             except ValueError as e:
                 print(f"Error processing row: {row}. Exception: {e}")
-        
-        # print(f"Menu Names: {menu_names}")
-        # print(f"Topping Names: {topping_names}")
-        # print(f"Counts: {counts}")
 
         return menu_names, topping_names, counts
 
@@ -223,7 +215,6 @@ class DatabaseManager:
             age_group;
         """
         
-        # Execute the query and return results
         result = self._executeQuery(query, (date_str,), fetch=True)
         return result
     
@@ -231,13 +222,13 @@ class DatabaseManager:
     #덤프 데이터 생성
     def insertDummyData(self, numRecords, startDate, endDate):
         genders = ['M', 'F']
-        menu_ids = [1, 2, 3, 4]  # menu 테이블의 id 값
-        topping_ids = [1, 2, 3]  # topping 테이블의 id 값 (임시로 3개의 토핑이 있다고 가정)
+        menu_ids = [1, 2, 3, 4]
+        topping_ids = [1, 2, 3]
         menu_prices = {1: 3000, 2: 3000, 3: 3000, 4: 4000}
 
         total_days = (endDate - startDate).days + 1
         records_per_day = [random.randint(1, numRecords // total_days * 2) for _ in range(total_days)]
-        records_per_day[-1] = numRecords - sum(records_per_day[:-1])  # 나머지 레코드를 마지막 날에 할당
+        records_per_day[-1] = numRecords - sum(records_per_day[:-1])
 
         record_count = 0
         data = []
@@ -249,8 +240,6 @@ class DatabaseManager:
             for _ in range(records_per_day[day]):
                 if record_count >= numRecords or currentDate > endDate:
                     break
-
-                # 시간대별로 랜덤하게 분포시키기 위해 시간을 랜덤하게 생성
                 random_hour = random.randint(0, 23)
                 random_minute = random.randint(0, 59)
                 random_second = random.randint(0, 59)
@@ -267,14 +256,10 @@ class DatabaseManager:
 
                 record_count += 1
 
-            # daily_records를 시간 순으로 정렬
             daily_records.sort(key=lambda x: x[0])
             data.extend(daily_records)
 
-        # 전체 데이터를 시간 순으로 정렬
         data.sort(key=lambda x: x[0])
-
-        # 정렬된 데이터에 오더 넘버 부여
         final_data = []
         previous_date = None
         order_id = 1
@@ -282,7 +267,7 @@ class DatabaseManager:
         for record in data:
             order_datetime = record[0]
             if previous_date is None or previous_date.date() != order_datetime.date():
-                order_id = 1  # 날짜가 변하면 order_id를 1로 초기화
+                order_id = 1 
                 previous_date = order_datetime
 
             final_data.append((order_id, *record))

@@ -84,4 +84,4 @@ class LoginPage(QDialog, loginClass):
             time.sleep(2)
             self.storeNode.destroy_node()
             rp.shutdown()
-        event.accept()  # 창을 닫음
+        event.accept()

@@ -8,11 +8,10 @@ def main():
     dbNode.destroy_node()
     rp.shutdown()
 
-
 if __name__ == "__main__":
     main()
     
-    # # # 테스트용
+    # 덤프 데이터 넣기
     # dbManager = DatabaseManager(
     #     host="localhost",
     #     user="root",
@@ -22,8 +21,6 @@ if __name__ == "__main__":
 
     # try:
     #     dbManager.connect()
-
-    #     # 덤프 데이터 넣기
     #     dbManager.truncateTable()
     #     startDate = datetime.strptime('2024-06-01 00:00:00', '%Y-%m-%d %H:%M:%S')
     #     endDate = datetime.strptime('2024-07-30 23:59:59', '%Y-%m-%d %H:%M:%S')
