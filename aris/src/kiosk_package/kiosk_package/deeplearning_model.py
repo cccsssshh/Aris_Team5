@@ -1,26 +1,30 @@
 import sys
 import os
 from ament_index_python.packages import get_package_share_directory
-
+# 현재 스크립트의 디렉토리를 sys.path에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
+package_share_directory = get_package_share_directory('kiosk_package')
+gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
+age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
 
 import cv2
-import time
 import numpy as np
-from collections import Counter
-from collections import deque
-import mediapipe as mp
 from deepface import DeepFace
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.models import load_model
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtGui import QImage, QPixmap
+import mediapipe as mp
+from collections import Counter
+import time
+from collections import deque
 
-os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/local/opt/qt/plugins'  # 이 경로를 실제 Qt 플러그인 경로로 설정
 
 
-package_share_directory = get_package_share_directory('kiosk_package')
-age_model_file_path = os.path.join(package_share_directory, 'models/age_model.hdf5')
-gesture_model_file_path = os.path.join(package_share_directory, 'models/gesture_model_v2.hdf5')
+
 class GestureModel():
     def __init__(self):
         self.model = load_model(gesture_model_file_path)  # 동작 인식 모델
@@ -143,38 +147,25 @@ class AgeModel():
         self.gender = None
         self.ageBuffer = []
         self.genderBuffer = []
-        self.detected = False
-        self.detected_time = 0
 
     def detectFace(self, frame):
-        current_time = time.time()
-
-        if self.detected:
-            if(current_time - self.detected_time < 10):
-            # 얼굴이 감지된 후 10초가 지나지 않았다면 감지를 중지
-                return False
-            else:
-                self.detected = False
-
+        face_image = None
+        gender_label = None
+        analysis = None
         try:
             analysis = DeepFace.analyze(frame, actions=['gender'], detector_backend='yunet', enforce_detection=False)
             if isinstance(analysis, list):
                 for face in analysis:
                     region = face['region']
                     x, y, w, h = region['x'], region['y'], region['w'], region['h']
-                    if w > 70 and h > 90:
-                        # 얼굴 주위에 사각형 그리기
-                        self.detected = True
-                        self.detected_time = time.time()  # 감지된 시간을 기록
-                        # cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-                        # gender_label = f"Gender: {face['dominant_gender']}"
-                        # cv2.putText(frame, gender_label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
-                        print(f"Detected face with rectangle size: width={w}, height={h}")  # 사각형 크기 출력
+                    if w > 90 and h > 120:
+                        face_image = frame[y:y+h, x:x+w]
+                        gender_label = f"Gender: {face['dominant_gender']}"
                         break  # 첫 번째 얼굴만 반환
         except Exception as e:
             print(f"Error: {e}")
 
-        return self.detected
+        return face_image, gender_label, analysis
 
     def predictAge(self, faceImage):
         faceResized = cv2.resize(faceImage, (224, 224))

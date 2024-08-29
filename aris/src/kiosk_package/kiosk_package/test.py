@@ -74,8 +74,8 @@ class Kiosk(Node, QObject):
         # while not self.cli2.wait_for_service(timeout_sec=1.0):
         #     self.get_logger().info('service not available, waiting again...')
         
-        # while not self.cli3.wait_for_service(timeout_sec=1.0):
-        #     self.get_logger().info('service not available, waiting again...')
+        while not self.cli3.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
 
         self.req = OrderRecord.Request()
         self.req2 = RestQuantity.Request()
@@ -223,7 +223,8 @@ class FirstClass(QMainWindow,first_class):
         self.setupUi(self)
         self.setWindowTitle("Main Page")
 
-        self.init_ros2()
+        self.client_node_thread()
+        self.camera_class_call()
 
         self.ros2_client_worker.get_logger().info('ros2 client worker start')
 
@@ -231,7 +232,7 @@ class FirstClass(QMainWindow,first_class):
         self.stackedWidget.setCurrentIndex(0)  # 시작할때 화면은 오픈 페이지로 설정
         self.set_ad_image()  
         self.setWindowFlags(Qt.FramelessWindowHint) # 프레임 지우기
-        self.move(175,350) #창이동
+        self.move(10,30) #창이동
 
         # 페이지 이동 및 타이머 시작
         self.ad_label.mousePressEvent = self.start_main_page # 페이지 이동
@@ -287,24 +288,32 @@ class FirstClass(QMainWindow,first_class):
 
         self.pay_pushButton.clicked.connect(lambda: self.Sending_Data())
 
-        self.camera = Camera()
-        self.camera.start()
-        ###################손 제스쳐###################
-        self.camera.action.connect(self.handleAction)
-        #############################################
-
         self.order_status = 0
         self.check_flag = False
 
         self.second_menu_add = False
+
+
     
-    def init_ros2(self):
+    ### 별도의 스레드 관리 (클라이언트 노드, 카메라) ############################################################################
+
+    def client_node_thread(self):
         """client node 클래스를 별도의 스레드로 생성,실행"""
 
         rclpy.init(args=None)
         self.ros2_client_worker = Kiosk()
         self.thread = threading.Thread(target=rclpy.spin, args=(self.ros2_client_worker,))
         self.thread.start()
+    
+    def camera_class_call(self):
+        """Camera 클래스 호출"""
+
+        self.camera = Camera()
+        self.camera.start()
+
+
+    
+    ### 오픈화면 -> 메인화면 ###############################################################################################
         
     def set_ad_image(self):
         """오픈화면에 적용되는 광고 이미지를 불러옴"""
@@ -316,44 +325,13 @@ class FirstClass(QMainWindow,first_class):
 
         self.stackedWidget.setCurrentWidget(self.main_page)
 
-    def recommend_soldout(self, data):
-        """restquantity 신호에 따라 추천, 품절 label 보여줌"""
 
-        if data is not None and isinstance(data, list):
-            self.berry_recommend_label.hide()
-            self.choco_recommend_label.hide()
-            self.banana_recommend_label.hide()
-            self.affogato_recommend_label.hide()
-            self.berry_soldout_label.hide()
-            self.choco_soldout_label.hide()
-            self.banana_soldout_label.hide()
-            self.affogato_soldout_label.hide()
-        
-        if "strawberry_max" in data:
-            self.berry_recommend_label.show()
-        if "chocolate_max" in data:
-            self.choco_recommend_label.show()
-        if "banana_max" in data:
-            self.banana_recommend_label.show()
-        if "affogato_max" in data:
-            self.affogato_recommend_label.show()
-        if "strawberry_zero" in data:
-            self.berry_recommend_label.hide()
-            self.berry_soldout_label.show()
-        if "chocolate_zero" in data:
-            self.choco_recommend_label.hide()
-            self.choco_soldout_label.show()
-        if "banana_zero" in data:
-            self.banana_recommend_label.hide()
-            self.banana_soldout_label.show()
-        if "affogato_zero" in data:
-            self.affogato_recommend_label.hide()
-            self.affogato_soldout_label.show()
+
+    ### 메인화면 이동 후 동작 설정 ##########################################################################################
     
     def start_main_page(self, event):
-        """메인 페이지로 이동하고 성별/나이 모델 동작, 재고현황 요청, 3분 타이머 시작"""
+        """메인 페이지로 이동하고 성별/나이 모델 동작, 재고현황 요청, 3분 타이머 호출"""
 
-        self.stackedWidget.setCurrentWidget(self.main_page)
         self.category_stackedWidget.setCurrentWidget(self.menu_page)
         self.camera.detectMode = 1 #나이 성별 판단 모델 동작
         self.ros2_client_worker.send_request2()  # 메뉴별 재고현황 요청
@@ -399,9 +377,13 @@ class FirstClass(QMainWindow,first_class):
         self.time_Number.display(f"{self.minutes:02d}:{self.seconds:02d}")
         if self.remaining_time == 0:
             self.timer.stop()
+
+
+
+    ### MENU, OPTION, 장애인용 버튼 입력에 따른 창 전환 제어 #################################################################
     
     def check_current_page(self, num):
-        """버튼 입력에 따라 창 전환, 웹캠 창에서 카메라 모드 전환 및 TTS 안내"""
+        """버튼 입력에 따라 창 전환, 카메라 모드 전환 및 TTS 안내"""
 
         if num == 1:
             self.camera.detectMode = 1
@@ -411,9 +393,9 @@ class FirstClass(QMainWindow,first_class):
             self.category_stackedWidget.setCurrentWidget(self.option_page)
         elif num == 3:
             self.category_stackedWidget.setCurrentWidget(self.webcam_page)
-            # self.webcam_label.setPixmap(QPixmap())
             self.camera.detectMode = 2
             self.camera.frame.connect(self.update_image)
+            self.camera.action.connect(self.handleAction)
 
             text = "시각장애인용 키오스크입니다. 딸기맛은 하나, 초코맛은 둘, 바나나맛은 셋으로 손동작을 보여주세요."
             tts = gTTS(text=text, lang='ko')
@@ -434,13 +416,8 @@ class FirstClass(QMainWindow,first_class):
         q_image = QImage(resized_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
         self.webcam_label.setPixmap(QPixmap.fromImage(q_image))
     
-    def closeEvent(self, event):
-        """카메라 정지, 클라이언트 노드 파괴"""
-
-        self.camera.stop()
-        self.ros2_client_worker.destroy_node()
-        rclpy.shutdown()
-        event.accept()  # 창을 닫음
+    
+    ### 버튼 방식 주문 제어 ##################################################################################################
 
     def Berry_Add(self):
         global menu, menu_price
@@ -746,8 +723,13 @@ class FirstClass(QMainWindow,first_class):
 
         # self.stackedWidget.setCurrentWidget(self.open_page)
 
+    
+    ### 장애인용 손동작 주문 기능 제어 #######################################################################################
+    
     @pyqtSlot(str)
     def handleAction(self, action):
+        """TTS 안내로 주문 순차 진행, action 값에 따라 지정한 문자열을 주문내역 라벨에 표시 및 주문"""
+
         global orders, menu, order_num, tracking, shaking, half, order_number, date, topping, price, quantity, gender, age, menu_price
 
         print(action)
@@ -915,7 +897,7 @@ class FirstClass(QMainWindow,first_class):
 
                     # self.ros2_client_worker.send_request(order_number, date, menu, topping, price, quantity, gender, age)
                     # self.ros2_client_worker.send_request2()
-                    self.ros2_client_worker.send_request3(menu, order_num, shaking, half, tracking)
+                    # self.ros2_client_worker.send_request3(menu, order_num, shaking, half, tracking)
 
                 orders.clear()
                 self.tableWidget.setRowCount(0)
@@ -943,7 +925,9 @@ class FirstClass(QMainWindow,first_class):
                 print("다시 시도하세요")
     
     def menu_selected(self, action):
-        global menu, menu_price
+        """action 1, 2, 3 값에 따라 menu 변수에 지정한 문자열 대입"""
+
+        global menu
 
         if action == "1":
             # os.system("mpg321 output_1.mp3")  # "딸기맛을 선택하셨습니다. 맞다면 o, 아니라면 x로 손동작을 보여주세요."
@@ -963,7 +947,9 @@ class FirstClass(QMainWindow,first_class):
         return menu
 
     def price_selected(self, action):
-        global menu, menu_price
+        """action 1, 2, 3 값에 따라 menu_price에 지정한 값 대입"""
+
+        global menu_price
 
         if action == "1":
             menu_price = 2500
@@ -977,6 +963,8 @@ class FirstClass(QMainWindow,first_class):
         return menu_price
     
     def checking(self, action):
+        """action O, X 값에 따라 필요한 TTS 안내"""
+
         if action == "O":
             if self.order_status != 4:
                 print("추가되었습니다.")
@@ -987,6 +975,54 @@ class FirstClass(QMainWindow,first_class):
         elif action == "X":
             print("취소되었습니다.")
             return False
+        
+
+    ### 재고량에 따른 추천, 품절 표시 기능 제어 ####################################################################################################
+
+    def recommend_soldout(self, data):
+        """restquantity 신호에 따라 추천, 품절 label 보여줌"""
+
+        if data is not None and isinstance(data, list):
+            self.berry_recommend_label.hide()
+            self.choco_recommend_label.hide()
+            self.banana_recommend_label.hide()
+            self.affogato_recommend_label.hide()
+            self.berry_soldout_label.hide()
+            self.choco_soldout_label.hide()
+            self.banana_soldout_label.hide()
+            self.affogato_soldout_label.hide()
+        
+        if "strawberry_max" in data:
+            self.berry_recommend_label.show()
+        if "chocolate_max" in data:
+            self.choco_recommend_label.show()
+        if "banana_max" in data:
+            self.banana_recommend_label.show()
+        if "affogato_max" in data:
+            self.affogato_recommend_label.show()
+        if "strawberry_zero" in data:
+            self.berry_recommend_label.hide()
+            self.berry_soldout_label.show()
+        if "chocolate_zero" in data:
+            self.choco_recommend_label.hide()
+            self.choco_soldout_label.show()
+        if "banana_zero" in data:
+            self.banana_recommend_label.hide()
+            self.banana_soldout_label.show()
+        if "affogato_zero" in data:
+            self.affogato_recommend_label.hide()
+            self.affogato_soldout_label.show()
+    
+
+    ### UI 종료 시 카메라, 클라이언트 노드 정지 제어 ##################################################################################
+    
+    def closeEvent(self, event):
+        """카메라 정지, 클라이언트 노드 파괴"""
+
+        self.camera.stop()
+        self.ros2_client_worker.destroy_node()
+        rclpy.shutdown()
+        event.accept()  # 창을 닫음
         
 class Camera(QObject):
     frame = pyqtSignal(np.ndarray)
