@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/OrderInfo.msg"
   "msg/RobotStatusInfo.msg"
   "msg/Item.msg"
+  "msg/BincupXylocation.msg"
   "srv/Stocks.srv"
   "srv/ModifyStocks.srv"
   "srv/DailySales.srv"
@@ -33,6 +34,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Age.srv"
   "srv/MenuTopping.srv"
   "srv/Check.srv"
+  
 )
 
 
